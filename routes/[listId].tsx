@@ -1,8 +1,8 @@
 import { Head } from "$fresh/runtime.ts";
 import { Handlers } from "$fresh/server.ts";
-import TodoListView from "../islands/TodoListView.tsx";
+import EndpointListView from "../islands/EndpointListView.tsx";
 import { db, inputSchema, loadList, writeItems } from "../services/database.ts";
-import { TodoList } from "../shared/api.ts";
+import { EndpointList } from "../shared/api.ts";
 
 export const handler: Handlers = {
   GET: async (req, ctx) => {
@@ -68,15 +68,17 @@ export const handler: Handlers = {
 };
 
 export default function Home(
-  { data: { data, latency } }: { data: { data: TodoList; latency: number } },
+  { data: { data, latency } }: {
+    data: { data: EndpointList; latency: number };
+  },
 ) {
   return (
     <>
       <Head>
-        <title>Todo List</title>
+        <title>Denoseek</title>
       </Head>
       <div class="p-4 mx-auto max-w-screen-md">
-        <TodoListView initialData={data} latency={latency} />
+        <EndpointListView initialData={data} latency={latency} />
       </div>
     </>
   );

@@ -1,14 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import type { TodoList, TodoListItem } from "../shared/api.ts";
+import type { EndpointList, EndpointListItem } from "../shared/api.ts";
 import axios from "axios-web";
 
 interface LocalMutation {
-  text: string | null;
+  setting: string | null;
+  name: string | null;
+  endpoint: string | null;
+  apiKey: string | null;
   completed: boolean;
 }
 
-export default function TodoListView(
-  props: { initialData: TodoList; latency: number },
+export default function EndpointListView(
+  props: { initialData: EndpointList; latency: number },
 ) {
   const [data, setData] = useState(props.initialData);
   const [dirty, setDirty] = useState(false);
@@ -17,11 +20,21 @@ export default function TodoListView(
   const busy = hasLocalMutations || dirty;
   const [adding, setAdding] = useState(false);
 
+  const baseUrlInput = useRef<HTMLInputElement>(null);
+  const apiKeyInput = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
+    const url = new URL(window.location.href);
+    const base = url.origin;
+    const key = url.pathname.slice(1);
+
+    baseUrlInput.current!.value = base;
+    apiKeyInput.current!.value = key;
+
     let es = new EventSource(window.location.href);
 
     es.addEventListener("message", (e) => {
-      const newData: TodoList = JSON.parse(e.data);
+      const newData: EndpointList = JSON.parse(e.data);
       setData(newData);
       setDirty(false);
       setAdding(false);
@@ -50,7 +63,10 @@ export default function TodoListView(
               [id, mut],
             ) => ({
               id,
-              text: mut.text,
+              setting: mut.setting,
+              name: mut.name,
+              endpoint: mut.endpoint,
+              apiKey: mut.apiKey,
               completed: mut.completed,
             }));
             while (true) {
@@ -74,25 +90,37 @@ export default function TodoListView(
     })();
   }, []);
 
-  const addTodoInput = useRef<HTMLInputElement>(null);
-  const addTodo = useCallback(() => {
-    const value = addTodoInput.current!.value;
+  const addEndpointInput = useRef<HTMLInputElement>(null);
+  const addEndpoint = useCallback(() => {
+    const value = addEndpointInput.current!.value;
     if (!value) return;
-    addTodoInput.current!.value = "";
+    addEndpointInput.current!.value = "";
+
+    const setting = value;
+    const [name, endpoint, apiKey] = value.split("|", 3);
 
     const id = generateItemId();
     localMutations.current.set(id, {
-      text: value,
+      setting,
+      name,
+      endpoint,
+      apiKey,
       completed: false,
     });
     setHasLocalMutations(true);
     setAdding(true);
   }, []);
 
-  const saveTodo = useCallback(
-    (item: TodoListItem, text: string | null, completed: boolean) => {
+  const saveEndpoint = useCallback(
+    (item: EndpointListItem, setting: string | null, completed: boolean) => {
+      if (!setting) return;
+
+      const [name, endpoint, apiKey] = setting.split("|", 3);
       localMutations.current.set(item.id!, {
-        text,
+        setting,
+        name,
+        endpoint,
+        apiKey,
         completed,
       });
       setHasLocalMutations(true);
@@ -105,7 +133,7 @@ export default function TodoListView(
       <div class="rounded w-full xl:max-w-xl">
         <div class="flex flex-col gap-4 pb-4">
           <div class="flex flex-row gap-2 items-center">
-            <h1 class="font-bold text-xl">Todo List</h1>
+            <h1 class="font-bold text-xl">Denoseek</h1>
             <div
               class={`inline-block h-2 w-2 ${
                 busy ? "bg-yellow-600" : "bg-green-600"
@@ -116,30 +144,57 @@ export default function TodoListView(
           </div>
           <div class="flex">
             <p class="opacity-50 text-sm">
-              Share this page to collaborate with others.
+              Save this page to avoid losing your setting. Share this page to
+              collaborate with others.
             </p>
+          </div>
+          <div class="flex">
+            <h3 class="flex items-center text-md w-24">Base URL</h3>
+            <input
+              class="border rounded w-full py-1 px-3"
+              ref={baseUrlInput}
+              onClick={() => baseUrlInput.current?.select()}
+              readonly
+            />
+          </div>
+          <div class="flex">
+            <h3 class="flex items-center text-md w-24">API Key</h3>
+            <input
+              class="border rounded w-full py-1 px-3"
+              ref={apiKeyInput}
+              onClick={() => apiKeyInput.current?.select()}
+              readonly
+            />
+          </div>
+          <div class="flex flex-row gap-2 items-center">
+            <h2 class="font-bold text-lg">Endpoints</h2>
           </div>
           <div class="flex">
             <input
               class="border rounded w-full py-2 px-3 mr-4"
-              placeholder="Add a todo item"
-              ref={addTodoInput}
+              placeholder="Add an endpoint (name|endpoint|apikey)"
+              ref={addEndpointInput}
             />
             <button
               class="p-2 bg-blue-600 text-white rounded disabled:opacity-50"
-              onClick={addTodo}
+              onClick={addEndpoint}
               disabled={adding}
             >
               Add
             </button>
           </div>
+          <div class="flex">
+            <p class="opacity-50 text-sm">
+              Endpoint format: name|endpoint|apikey
+            </p>
+          </div>
         </div>
         <div>
           {data.items.map((item) => (
-            <TodoItem
+            <EndpointItem
               key={item.id! + ":" + item.versionstamp!}
               item={item}
-              save={saveTodo}
+              save={saveEndpoint}
             />
           ))}
         </div>
@@ -149,7 +204,7 @@ export default function TodoListView(
           </p>
           <p>
             <a
-              href="https://github.com/denoland/showcase_todo"
+              href="https://github.com/junjiepro/denoseek"
               class="underline"
             >
               Source code
@@ -161,10 +216,14 @@ export default function TodoListView(
   );
 }
 
-function TodoItem(
+function EndpointItem(
   { item, save }: {
-    item: TodoListItem;
-    save: (item: TodoListItem, text: string | null, completed: boolean) => void;
+    item: EndpointListItem;
+    save: (
+      item: EndpointListItem,
+      setting: string | null,
+      completed: boolean,
+    ) => void;
   },
 ) {
   const input = useRef<HTMLInputElement>(null);
@@ -178,7 +237,7 @@ function TodoItem(
   const cancelEdit = useCallback(() => {
     if (!input.current) return;
     setEditing(false);
-    input.current.value = item.text;
+    input.current.value = item.setting;
   }, []);
   const doDelete = useCallback(() => {
     const yes = confirm("Are you sure you want to delete this item?");
@@ -188,7 +247,7 @@ function TodoItem(
   }, [item]);
   const doSaveCompleted = useCallback((completed: boolean) => {
     setBusy(true);
-    save(item, item.text, completed);
+    save(item, item.setting, completed);
   }, [item]);
 
   return (
@@ -201,7 +260,7 @@ function TodoItem(
           <input
             class="border rounded w-full py-2 px-3 mr-4"
             ref={input}
-            defaultValue={item.text}
+            defaultValue={item.setting}
           />
           <button
             class="p-2 rounded mr-2 disabled:opacity-50"
@@ -232,7 +291,7 @@ function TodoItem(
           />
           <div class="flex flex-col w-full font-mono">
             <p>
-              {item.text}
+              {item.name}
             </p>
             <p class="text-xs opacity-50 leading-loose">
               {new Date(item.createdAt).toISOString()}

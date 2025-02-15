@@ -1,15 +1,18 @@
-export interface TodoList {
-  items: TodoListItem[];
+export interface EndpointList {
+  items: EndpointListItem[];
 }
 
-export interface TodoListItem {
+export interface EndpointListItem {
   // Non-empty in API request and response
   id?: string;
 
   // Non-empty in API response
   versionstamp?: string;
 
-  text: string;
+  setting: string;
+  name: string;
+  endpoint: string;
+  apiKey: string;
   completed: boolean;
   createdAt: number;
   updatedAt: number;
