@@ -9,7 +9,7 @@ export const inputSchema = z.array(
     name: z.string(),
     endpoint: z.string(),
     apiKey: z.string(),
-    completed: z.boolean(),
+    enabled: z.boolean(),
   })
 );
 export type InputSchema = z.infer<typeof inputSchema>;
@@ -62,7 +62,7 @@ export async function writeItems(
         name: input.name,
         endpoint: input.endpoint,
         apiKey: input.apiKey,
-        completed: input.completed,
+        enabled: input.enabled,
         createdAt,
         updatedAt: now,
       };

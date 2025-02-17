@@ -13,7 +13,7 @@ export interface EndpointListItem {
   name: string;
   endpoint: string;
   apiKey: string;
-  completed: boolean;
+  enabled: boolean;
   createdAt: number;
   updatedAt: number;
 }

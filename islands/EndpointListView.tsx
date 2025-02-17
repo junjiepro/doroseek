@@ -7,7 +7,7 @@ interface LocalMutation {
   name: string | null;
   endpoint: string | null;
   apiKey: string | null;
-  completed: boolean;
+  enabled: boolean;
 }
 
 export default function EndpointListView(
@@ -67,7 +67,7 @@ export default function EndpointListView(
               name: mut.name,
               endpoint: mut.endpoint,
               apiKey: mut.apiKey,
-              completed: mut.completed,
+              enabled: mut.enabled,
             }));
             while (true) {
               try {
@@ -105,14 +105,14 @@ export default function EndpointListView(
       name,
       endpoint,
       apiKey,
-      completed: false,
+      enabled: true,
     });
     setHasLocalMutations(true);
     setAdding(true);
   }, []);
 
   const saveEndpoint = useCallback(
-    (item: EndpointListItem, setting: string | null, completed: boolean) => {
+    (item: EndpointListItem, setting: string | null, enabled: boolean) => {
       if (!setting) return;
 
       const [name, endpoint, apiKey] = setting.split("|", 3);
@@ -121,7 +121,7 @@ export default function EndpointListView(
         name,
         endpoint,
         apiKey,
-        completed,
+        enabled,
       });
       setHasLocalMutations(true);
     },
@@ -222,7 +222,7 @@ function EndpointItem(
     save: (
       item: EndpointListItem,
       setting: string | null,
-      completed: boolean,
+      enabled: boolean,
     ) => void;
   },
 ) {
@@ -232,7 +232,7 @@ function EndpointItem(
   const doSave = useCallback(() => {
     if (!input.current) return;
     setBusy(true);
-    save(item, input.current.value, item.completed);
+    save(item, input.current.value, item.enabled);
   }, [item]);
   const cancelEdit = useCallback(() => {
     if (!input.current) return;
@@ -243,11 +243,11 @@ function EndpointItem(
     const yes = confirm("Are you sure you want to delete this item?");
     if (!yes) return;
     setBusy(true);
-    save(item, null, item.completed);
+    save(item, null, item.enabled);
   }, [item]);
-  const doSaveCompleted = useCallback((completed: boolean) => {
+  const doSaveEnabled = useCallback((enabled: boolean) => {
     setBusy(true);
-    save(item, item.setting, completed);
+    save(item, item.setting, enabled);
   }, [item]);
 
   return (
@@ -284,9 +284,9 @@ function EndpointItem(
         <>
           <input
             type="checkbox"
-            checked={item.completed}
+            checked={item.enabled}
             disabled={busy}
-            onChange={(e) => doSaveCompleted(e.currentTarget.checked)}
+            onChange={(e) => doSaveEnabled(e.currentTarget.checked)}
             class="mr-2"
           />
           <div class="flex flex-col w-full font-mono">
