@@ -37,7 +37,7 @@ class LoadBalancer {
       endpointIds: items.map((item) => item.id ?? ""),
       models: items.reduce((acc, item) => {
         item.models.forEach((model) => {
-          const [a, b] = model.split(":");
+          const [a, b] = model.split("@");
           const realModel = b ?? a;
           acc[a] = acc[a] || [];
           acc[a].push({ id: item.id ?? "", model: realModel });

@@ -290,7 +290,7 @@ function EndpointItem(
     save(item, item.setting, models, item.enabled);
   }, [item]);
 
-  const modelNames = item.models?.map((m) => m.split(":")[0]) || [];
+  const modelNames = item.models?.map((m) => m.split("@")[0]) || [];
 
   return (
     <div
