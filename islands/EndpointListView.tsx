@@ -30,7 +30,7 @@ export default function EndpointListView(
     const base = url.origin;
     const key = url.pathname.slice(1);
 
-    baseUrlInput.current!.value = base;
+    baseUrlInput.current!.value = `${base}/api`;
     apiKeyInput.current!.value = key;
 
     let es = new EventSource(window.location.href);
@@ -122,17 +122,26 @@ export default function EndpointListView(
       models: string[] | null,
       enabled: boolean,
     ) => {
-      if (!setting) return;
-
-      const [name, endpoint, apiKey] = setting.split("|", 3);
-      localMutations.current.set(item.id!, {
-        setting,
-        name,
-        endpoint,
-        apiKey,
-        models,
-        enabled,
-      });
+      if (!setting) {
+        localMutations.current.set(item.id!, {
+          setting: "",
+          name: "",
+          endpoint: "",
+          apiKey: "",
+          models: [],
+          enabled,
+        });
+      } else {
+        const [name, endpoint, apiKey] = setting.split("|", 3);
+        localMutations.current.set(item.id!, {
+          setting,
+          name,
+          endpoint,
+          apiKey,
+          models,
+          enabled,
+        });
+      }
       setHasLocalMutations(true);
     },
     [],

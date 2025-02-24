@@ -1,9 +1,9 @@
 import { FreshContext, RouteConfig } from "$fresh/server.ts";
+import loadBalancer from "../services/endpoint.ts";
 
 export const handler = {
-  GET(_req: Request, { params }: FreshContext) {
-    console.log(params);
-    return new Response(params.path);
+  POST(_req: Request, { params }: FreshContext) {
+    return loadBalancer.handleRequest(params.path, _req);
   },
 };
 

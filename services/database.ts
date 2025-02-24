@@ -1,5 +1,6 @@
 import { EndpointList, EndpointListItem } from "../shared/api.ts";
 import { z } from "zod";
+import loadBalancer from "./endpoint.ts";
 
 export const db = await Deno.openKv();
 export const inputSchema = z.array(
@@ -51,7 +52,7 @@ export async function writeItems(
   const op = db.atomic();
 
   inputs.forEach((input: EndpointListItem, i) => {
-    if (input.endpoint === null) {
+    if (!input.setting) {
       op.delete(["list", listId, input.id]);
     } else {
       const current = currentEntries[i].value as EndpointListItem | null;
@@ -73,4 +74,5 @@ export async function writeItems(
   });
   op.set(["list_updated", listId], true);
   await op.commit();
+  loadBalancer.removeEndpoint(listId);
 }
