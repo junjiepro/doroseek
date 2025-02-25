@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { EndpointList, EndpointListItem } from "../shared/api.ts";
 import axios from "axios-web";
-import { mode } from "twind/twind.d.ts";
 
 interface LocalMutation {
   setting: string | null;
@@ -148,62 +147,62 @@ export default function EndpointListView(
   );
 
   return (
-    <div class="flex gap-2 w-full items-center justify-center py-4 xl:py-16 px-2">
-      <div class="rounded w-full xl:max-w-xl">
-        <div class="flex flex-col gap-4 pb-4">
-          <div class="flex flex-row gap-2 items-center">
-            <h1 class="font-bold text-xl">Denoseek</h1>
+    <div className="flex gap-2 w-full items-center justify-center py-4 xl:py-16 px-2">
+      <div className="rounded w-full xl:max-w-xl">
+        <div className="flex flex-col gap-4 pb-4">
+          <div className="flex flex-row gap-2 items-center">
+            <h1 className="font-bold text-xl">Denoseek</h1>
             <div
-              class={`inline-block h-2 w-2 ${
+              className={`inline-block h-2 w-2 ${
                 busy ? "bg-yellow-600" : "bg-green-600"
               }`}
               style={{ borderRadius: "50%" }}
             >
             </div>
           </div>
-          <div class="flex">
-            <p class="opacity-50 text-sm">
+          <div className="flex">
+            <p className="opacity-50 text-sm">
               Save this page to avoid losing your setting. Share this page to
               collaborate with others.
             </p>
           </div>
-          <div class="flex">
-            <h3 class="flex items-center text-md w-24">Base URL</h3>
+          <div className="flex">
+            <h3 className="flex items-center text-md w-24">Base URL</h3>
             <input
-              class="border rounded w-full py-1 px-3"
+              className="text-black border rounded w-full py-1 px-3"
               ref={baseUrlInput}
               onClick={() => baseUrlInput.current?.select()}
               readonly
             />
           </div>
-          <div class="flex">
-            <h3 class="flex items-center text-md w-24">API Key</h3>
+          <div className="flex">
+            <h3 className="flex items-center text-md w-24">API Key</h3>
             <input
-              class="border rounded w-full py-1 px-3"
+              className="text-black border rounded w-full py-1 px-3"
               ref={apiKeyInput}
               onClick={() => apiKeyInput.current?.select()}
               readonly
             />
           </div>
-          <div class="flex flex-row gap-2 items-center">
-            <h2 class="font-bold text-lg">Endpoints</h2>
+          <div className="flex flex-row gap-2 items-center">
+            <h2 className="font-bold text-lg">Endpoints</h2>
           </div>
-          <div class="flex">
+          <div className="flex">
             <input
-              class="border rounded w-full py-2 px-3 mr-4"
+              className="text-black border rounded w-full py-2 px-3 mr-4"
               placeholder="Add an endpoint (name|endpoint|apikey)"
               ref={addEndpointInput}
             />
             <button
-              class="p-2 bg-blue-600 text-white rounded disabled:opacity-50"
+              className="p-2 bg-blue-600 text-white rounded disabled:opacity-50"
               onClick={addEndpoint}
               disabled={adding}
             >
               Add
             </button>
           </div>
-          <div class="flex">
-            <p class="opacity-50 text-sm">
+          <div className="flex">
+            <p className="opacity-50 text-sm">
               Endpoint format: name|endpoint|apikey
             </p>
           </div>
@@ -217,14 +216,14 @@ export default function EndpointListView(
             />
           ))}
         </div>
-        <div class="pt-6 opacity-50 text-sm">
+        <div className="pt-6 opacity-50 text-sm">
           <p>
             Initial data fetched in {props.latency}ms
           </p>
           <p>
             <a
               href="https://github.com/junjiepro/denoseek"
-              class="underline"
+              className="underline"
             >
               Source code
             </a>
@@ -294,18 +293,18 @@ function EndpointItem(
 
   return (
     <div
-      class="flex my-2 border-b border-gray-300 items-center min-h-16"
+      className="flex my-2 border-b border-gray-300 items-center min-h-16"
       {...{ "data-item-id": item.id! }}
     >
       {editing && (
         <>
           <input
-            class="border rounded w-full py-2 px-3 mr-4"
+            className="border rounded w-full py-2 px-3 mr-4"
             ref={input}
             defaultValue={item.setting}
           />
           <button
-            class="p-2 rounded mr-2 disabled:opacity-50"
+            className="p-2 rounded mr-2 disabled:opacity-50"
             title="Save"
             onClick={doSave}
             disabled={busy}
@@ -313,7 +312,7 @@ function EndpointItem(
             💾
           </button>
           <button
-            class="p-2 rounded disabled:opacity-50"
+            className="p-2 rounded disabled:opacity-50"
             title="Cancel"
             onClick={cancelEdit}
             disabled={busy}
@@ -325,13 +324,13 @@ function EndpointItem(
       {editingModels && (
         <>
           <input
-            class="border rounded w-full py-2 px-3 mr-4"
+            className="border rounded w-full py-2 px-3 mr-4"
             ref={modelsInput}
             defaultValue={item.models?.join(",")}
             placeholder="alias1:model1,alias2:model2"
           />
           <button
-            class="p-2 rounded mr-2 disabled:opacity-50"
+            className="p-2 rounded mr-2 disabled:opacity-50"
             title="Save"
             onClick={doSaveModels}
             disabled={busy}
@@ -339,7 +338,7 @@ function EndpointItem(
             💾
           </button>
           <button
-            class="p-2 rounded disabled:opacity-50"
+            className="p-2 rounded disabled:opacity-50"
             title="Cancel"
             onClick={cancelEditModels}
             disabled={busy}
@@ -355,19 +354,19 @@ function EndpointItem(
             checked={item.enabled}
             disabled={busy}
             onChange={(e) => doSaveEnabled(e.currentTarget.checked)}
-            class="mr-2"
+            className="mr-2"
           />
-          <div class="flex flex-col w-full font-mono">
+          <div className="flex flex-col w-full font-mono">
             <p>
               {item.name}
             </p>
             {modelNames.length > 0 && (
-              <p class="text-xs opacity-50 leading-loose">
+              <p className="text-xs opacity-50 leading-loose">
                 {modelNames.map((name) => (
-                  <div key={name} class="inline-block mr-2">
+                  <div key={name} className="inline-block mr-2">
                     <button
                       type="button"
-                      class="border rounded px-1 text-xs opacity-50 hover:opacity-100 [data-state=copied]:bg-green-500 [data-state=copied]:opacity-100 [data-state=copied]:text-white"
+                      className="border rounded px-1 text-xs opacity-50 hover:opacity-100 data-[state=copied]:bg-green-500 data-[state=copied]:opacity-100 data-[state=copied]:text-white"
                       data-state="false"
                       onClick={(event) => {
                         navigator.clipboard.writeText(name);
@@ -386,12 +385,12 @@ function EndpointItem(
                 ))}
               </p>
             )}
-            <p class="text-xs opacity-50 leading-loose">
+            <p className="text-xs opacity-50 leading-loose">
               {new Date(item.createdAt).toISOString()}
             </p>
           </div>
           <button
-            class="p-2 mr-2 disabled:opacity-50"
+            className="p-2 mr-2 disabled:opacity-50"
             title="Edit"
             onClick={() => setEditing(true)}
             disabled={busy}
@@ -399,7 +398,7 @@ function EndpointItem(
             ✏️
           </button>
           <button
-            class="p-2 mr-2 disabled:opacity-50"
+            className="p-2 mr-2 disabled:opacity-50"
             title="Edit models"
             onClick={() => setEditingModels(true)}
             disabled={busy}
@@ -407,7 +406,7 @@ function EndpointItem(
             🗂️
           </button>
           <button
-            class="p-2 disabled:opacity-50"
+            className="p-2 disabled:opacity-50"
             title="Delete"
             onClick={doDelete}
             disabled={busy}

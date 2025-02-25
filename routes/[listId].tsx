@@ -1,5 +1,6 @@
 import { Head } from "$fresh/runtime.ts";
 import { Handlers } from "$fresh/server.ts";
+import { AuroraBackground } from "../islands/AuroraBackground.tsx";
 import EndpointListView from "../islands/EndpointListView.tsx";
 import { db, inputSchema, loadList, writeItems } from "../services/database.ts";
 import { EndpointList } from "../shared/api.ts";
@@ -77,9 +78,11 @@ export default function Home(
       <Head>
         <title>Denoseek</title>
       </Head>
-      <div class="p-4 mx-auto max-w-screen-md">
-        <EndpointListView initialData={data} latency={latency} />
-      </div>
+      <AuroraBackground>
+        <div class="relative p-4 mx-auto max-w-screen-md dark:text-white">
+          <EndpointListView initialData={data} latency={latency} />
+        </div>
+      </AuroraBackground>
     </>
   );
 }

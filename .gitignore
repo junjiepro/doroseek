@@ -1,0 +1,4 @@
+# Ignore fresh build directory
+_fresh/
+
+node_modules/
