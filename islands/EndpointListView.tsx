@@ -151,7 +151,7 @@ export default function EndpointListView(
       <div className="rounded w-full xl:max-w-xl">
         <div className="flex flex-col gap-4 pb-4">
           <div className="flex flex-row gap-2 items-center">
-            <h1 className="font-bold text-xl">Denoseek</h1>
+            <h1 className="font-bold text-xl">Doroseek</h1>
             <div
               className={`inline-block h-2 w-2 ${
                 busy ? "bg-yellow-600" : "bg-green-600"
@@ -167,7 +167,7 @@ export default function EndpointListView(
             </p>
           </div>
           <div className="flex">
-            <h3 className="flex items-center text-md w-24">Base URL</h3>
+            <div className="flex items-center text-md w-24">Base URL</div>
             <input
               className="text-black border rounded w-full py-1 px-3"
               ref={baseUrlInput}
@@ -176,7 +176,7 @@ export default function EndpointListView(
             />
           </div>
           <div className="flex">
-            <h3 className="flex items-center text-md w-24">API Key</h3>
+            <div className="flex items-center text-md w-24">API Key</div>
             <input
               className="text-black border rounded w-full py-1 px-3"
               ref={apiKeyInput}
@@ -222,7 +222,7 @@ export default function EndpointListView(
           </p>
           <p>
             <a
-              href="https://github.com/junjiepro/denoseek"
+              href="https://github.com/junjiepro/Doroseek"
               className="underline"
             >
               Source code

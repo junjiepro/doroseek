@@ -76,10 +76,15 @@ export default function Home(
   return (
     <>
       <Head>
-        <title>Denoseek</title>
+        <title>Doroseek</title>
       </Head>
       <AuroraBackground>
-        <div class="relative p-4 mx-auto max-w-screen-md dark:text-white">
+        <div
+          class="relative p-4 mx-auto max-w-screen-md dark:text-white h-[100vh] overflow-auto"
+          style={{
+            scrollbarWidth: "none",
+          }}
+        >
           <EndpointListView initialData={data} latency={latency} />
         </div>
       </AuroraBackground>

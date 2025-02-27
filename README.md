@@ -1,4 +1,4 @@
-# `Denoseek`
+# `Doroseek`
 
 ![Screenshot](./static/screenshot.png)
 
