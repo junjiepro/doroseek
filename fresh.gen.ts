@@ -4,8 +4,10 @@
 
 import * as $_listId_ from "./routes/[listId].tsx";
 import * as $_app from "./routes/_app.tsx";
+import * as $_layout from "./routes/_layout.tsx";
 import * as $api from "./routes/api.tsx";
 import * as $index from "./routes/index.tsx";
+import * as $not_found from "./routes/not-found.tsx";
 import * as $AuroraBackground from "./islands/AuroraBackground.tsx";
 import * as $EndpointListView from "./islands/EndpointListView.tsx";
 import type { Manifest } from "$fresh/server.ts";
@@ -14,8 +16,10 @@ const manifest = {
   routes: {
     "./routes/[listId].tsx": $_listId_,
     "./routes/_app.tsx": $_app,
+    "./routes/_layout.tsx": $_layout,
     "./routes/api.tsx": $api,
     "./routes/index.tsx": $index,
+    "./routes/not-found.tsx": $not_found,
   },
   islands: {
     "./islands/AuroraBackground.tsx": $AuroraBackground,
