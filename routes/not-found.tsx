@@ -16,7 +16,13 @@ export default function Home() {
           <div className="rounded w-full xl:max-w-xl">
             <div className="flex flex-col gap-4 pb-4">
               <div className="flex flex-row gap-2 items-center">
-                <h1 className="font-bold text-xl">Doroseek</h1>
+                <h1 className="font-bold text-xl">
+                  <span className="relative inline-block before:absolute before:-inset-1 before:block before:-skew-y-3 before:bg-pink-500">
+                    <span className="relative text-white">
+                      Doroseek
+                    </span>
+                  </span>
+                </h1>
               </div>
               <div className="flex flex-row gap-2 items-center">
                 <h2 className="font-bold text-lg">Not found</h2>

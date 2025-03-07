@@ -9,6 +9,8 @@ import * as $api from "./routes/api.tsx";
 import * as $index from "./routes/index.tsx";
 import * as $not_found from "./routes/not-found.tsx";
 import * as $AuroraBackground from "./islands/AuroraBackground.tsx";
+import * as $EndpointItem from "./islands/EndpointItem.tsx";
+import * as $EndpointKey from "./islands/EndpointKey.tsx";
 import * as $EndpointListView from "./islands/EndpointListView.tsx";
 import type { Manifest } from "$fresh/server.ts";
 
@@ -23,6 +25,8 @@ const manifest = {
   },
   islands: {
     "./islands/AuroraBackground.tsx": $AuroraBackground,
+    "./islands/EndpointItem.tsx": $EndpointItem,
+    "./islands/EndpointKey.tsx": $EndpointKey,
     "./islands/EndpointListView.tsx": $EndpointListView,
   },
   baseUrl: import.meta.url,
