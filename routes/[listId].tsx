@@ -1,7 +1,14 @@
 import { Head } from "$fresh/runtime.ts";
 import { Handlers } from "$fresh/server.ts";
 import EndpointListView from "../islands/EndpointListView.tsx";
-import { db, inputSchema, loadList, writeItems } from "../services/database.ts";
+import {
+  db,
+  itemInputSchema,
+  keyInputSchema,
+  loadList,
+  writeItems,
+  writeKeys,
+} from "../services/database.ts";
 import { EndpointList } from "../shared/api.ts";
 import { ADMIN_KEY } from "../shared/admin.ts";
 
@@ -68,9 +75,18 @@ export const handler: Handlers = {
     if (ADMIN_KEY && listId !== ADMIN_KEY) {
       return Response.redirect(new URL("/not-found", req.url), 302);
     }
-    const body = inputSchema.parse(await req.json());
-    await writeItems(listId, body);
-    return Response.json({ ok: true });
+    const url = new URL(req.url);
+    const type = url.searchParams.get("type");
+    if (type === "item") {
+      const body = itemInputSchema.parse(await req.json());
+      await writeItems(listId, body);
+      return Response.json({ ok: true });
+    } else if (type === "key") {
+      const body = keyInputSchema.parse(await req.json());
+      await writeKeys(listId, body);
+      return Response.json({ ok: true });
+    }
+    return Response.json({ error: "Invalid type" }, { status: 400 });
   },
 };
 

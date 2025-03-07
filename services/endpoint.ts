@@ -1,4 +1,4 @@
-import { loadList } from "../services/database.ts";
+import { getParentKey, loadList } from "../services/database.ts";
 
 interface Endpoint {
   id: string;
@@ -29,8 +29,19 @@ class LoadBalancer {
     delete this.endpoints[listId];
   }
 
-  async loadEndpointConfig(listId: string): Promise<void> {
-    const list = await loadList(listId, "strong");
+  async loadEndpointConfig(listId: string): Promise<EndpointConfig | null> {
+    const config = this.endpoints[listId];
+    if (config) {
+      return config;
+    }
+
+    const list = await loadList(listId, "strong", true);
+    if (list.items.length === 0) {
+      const parentId = await getParentKey(listId);
+      if (!parentId) return null;
+      return await this.loadEndpointConfig(parentId);
+    }
+
     const items = list.items.filter((item) => item.enabled);
 
     this.endpoints[listId] = {
@@ -61,17 +72,15 @@ class LoadBalancer {
         {} as Record<string, Endpoint>
       ),
     };
+
+    return this.endpoints[listId];
   }
 
   async getNextEndpoint(
     listId: string,
     modelName: string
   ): Promise<Endpoint | null> {
-    let config = this.endpoints[listId];
-    if (!config) {
-      await this.loadEndpointConfig(listId);
-      config = this.endpoints[listId];
-    }
+    const config = await this.loadEndpointConfig(listId);
 
     if (!config) return null;
 
@@ -97,7 +106,9 @@ class LoadBalancer {
     retryCount = 0
   ): Promise<Response> {
     if (retryCount >= this.maxRetries) {
-      return new Response("Service unavailable", { status: 503 });
+      return new Response("Service unavailable, please try again later", {
+        status: 503,
+      });
     }
 
     try {
@@ -120,7 +131,9 @@ class LoadBalancer {
       const endpoint = await this.getNextEndpoint(apiKey, customModelName);
       if (!endpoint) {
         return new Response(
-          JSON.stringify({ error: `Model '${customModelName}' not supported` }),
+          JSON.stringify({
+            error: `Model '${customModelName}' not supported for your API key`,
+          }),
           { status: 400, headers: { "Content-Type": "application/json" } }
         );
       }
@@ -132,17 +145,25 @@ class LoadBalancer {
       };
 
       // 转发请求
-      const proxyResponse = await fetch(`${endpoint.endpoint}${url}`, {
-        method: request.method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${endpoint.apiKey}`,
-          apiKey: endpoint.apiKey,
-        },
-        body: JSON.stringify(proxiedRequestBody),
-      });
+      const proxyResponse = await fetch(
+        `${endpoint.endpoint}${
+          endpoint.endpoint.endsWith("/") ? "" : "/"
+        }${url}`,
+        {
+          method: request.method,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${endpoint.apiKey}`,
+            apiKey: endpoint.apiKey,
+          },
+          body: JSON.stringify(proxiedRequestBody),
+        }
+      );
 
       if (!proxyResponse.ok && proxyResponse.status >= 500) {
+        console.error(
+          `Proxy request failed: ${proxyResponse.status}, ${proxyResponse.statusText}`
+        );
         return this.handleRequest(url, request, retryCount + 1);
       }
 
