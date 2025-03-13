@@ -66,7 +66,7 @@ function EndpointItem(
       {editing && (
         <>
           <input
-            className="border rounded w-full py-2 px-3 mr-4"
+            className="text-black border rounded w-full py-2 px-3 mr-4"
             ref={input}
             defaultValue={item.setting}
           />
@@ -91,10 +91,10 @@ function EndpointItem(
       {editingModels && (
         <>
           <input
-            className="border rounded w-full py-2 px-3 mr-4"
+            className="text-black border rounded w-full py-2 px-3 mr-4"
             ref={modelsInput}
             defaultValue={item.models?.join(",")}
-            placeholder="alias1:model1,alias2:model2"
+            placeholder="alias1@model1,alias2@model2"
           />
           <button
             className="p-2 rounded mr-2 disabled:opacity-50"
