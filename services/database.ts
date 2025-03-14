@@ -123,6 +123,7 @@ export async function writeKeys(
     if (!input.name) {
       op.delete(["key", listId, input.id!]);
       op.delete(["parentkey", input.id!]);
+      loadBalancer.removeKey(input.id!);
     } else {
       const current = currentEntries[i].value as EndpointKey | null;
       const now = Date.now();
@@ -140,10 +141,10 @@ export async function writeKeys(
         op.set(["parentkey", input.id!], listId);
       } else {
         op.delete(["parentkey", input.id!]);
+        loadBalancer.removeKey(input.id!);
       }
     }
   });
   op.set(["list_updated", listId], true);
   await op.commit();
-  loadBalancer.removeEndpoint(listId);
 }

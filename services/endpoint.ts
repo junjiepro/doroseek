@@ -18,15 +18,33 @@ interface EndpointConfig {
 
 class LoadBalancer {
   private endpoints: Record<string, EndpointConfig>;
+  private keys: Record<string, string>;
   private readonly maxRetries: number;
+  private readonly channel: BroadcastChannel;
 
   constructor(maxRetries = 3) {
     this.endpoints = {};
+    this.keys = {};
     this.maxRetries = maxRetries;
+
+    this.channel = new BroadcastChannel("endpoints");
+    this.channel.onmessage = (e) => {
+      if (e.data.type === "removeEndpoint") {
+        this.removeEndpoint(e.data.listId);
+      } else if (e.data.type === "removeKey") {
+        this.removeKey(e.data.key);
+      }
+    };
   }
 
   removeEndpoint(listId: string): void {
     delete this.endpoints[listId];
+    this.channel.postMessage({ type: "removeEndpoint", listId });
+  }
+
+  removeKey(key: string): void {
+    delete this.keys[key];
+    this.channel.postMessage({ type: "removeKey", key });
   }
 
   async loadEndpointConfig(listId: string): Promise<EndpointConfig | null> {
@@ -37,8 +55,12 @@ class LoadBalancer {
 
     const list = await loadList(listId, "strong", true);
     if (list.items.length === 0) {
-      const parentId = await getParentKey(listId);
-      if (!parentId) return null;
+      let parentId: string | null = this.keys[listId];
+      if (!parentId) {
+        parentId = await getParentKey(listId);
+        if (!parentId) return null;
+        this.keys[listId] = parentId;
+      }
       return await this.loadEndpointConfig(parentId);
     }
 

@@ -1,7 +1,7 @@
 {
   "tasks": {
-    "start": "deno run -A --unstable-kv --env-file=.env --watch=static/,routes/ dev.ts",
-    "build": "deno run -A --unstable-kv dev.ts build",
+    "start": "deno run -A --unstable-kv --unstable-broadcast-channel --env-file=.env --watch=static/,routes/ dev.ts",
+    "build": "deno run -A --unstable-kv --unstable-broadcast-channel dev.ts build",
     "preview": "deno run -A main.ts"
   },
   "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "preact" },
