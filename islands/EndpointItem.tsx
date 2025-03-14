@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "preact/hooks";
+import { useCallback, useMemo, useRef, useState } from "preact/hooks";
 import type { EndpointListItem } from "../shared/api.ts";
 
 function EndpointItem(
@@ -56,7 +56,19 @@ function EndpointItem(
     save(item, item.setting, models, item.enabled);
   }, [item]);
 
-  const modelNames = item.models?.map((m) => m.split("@")[0]) || [];
+  const modelNames = useMemo(() => {
+    const names: string[] = [];
+    item.models?.forEach((m) => {
+      const [a, b] = m.split("@");
+      if (!names.includes(a)) {
+        names.push(a);
+      }
+      if (b && !names.includes(b)) {
+        names.push(b);
+      }
+    });
+    return names;
+  }, [item.models]);
 
   return (
     <div
