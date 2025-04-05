@@ -7,6 +7,7 @@ import * as $_app from "./routes/_app.tsx";
 import * as $_layout from "./routes/_layout.tsx";
 import * as $api from "./routes/api.tsx";
 import * as $index from "./routes/index.tsx";
+import * as $mcp from "./routes/mcp.tsx";
 import * as $not_found from "./routes/not-found.tsx";
 import * as $AuroraBackground from "./islands/AuroraBackground.tsx";
 import * as $EndpointItem from "./islands/EndpointItem.tsx";
@@ -21,6 +22,7 @@ const manifest = {
     "./routes/_layout.tsx": $_layout,
     "./routes/api.tsx": $api,
     "./routes/index.tsx": $index,
+    "./routes/mcp.tsx": $mcp,
     "./routes/not-found.tsx": $not_found,
   },
   islands: {
