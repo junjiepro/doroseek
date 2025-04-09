@@ -1,8 +1,17 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ServerWrapper } from "../../shared/mcp.ts";
+import sequentialthinking from "./sequentialthinking.ts";
 
-const server = new McpServer({
-  name: "example-server",
-  version: "1.0.0",
-});
+const generateServer = (serverName: string): ServerWrapper | undefined => {
+  switch (serverName) {
+    case "sequentialthinking":
+      return {
+        name: serverName,
+        server: sequentialthinking,
+        destory: () => {},
+      };
+    default:
+      return undefined;
+  }
+};
 
-export { server };
+export default generateServer;

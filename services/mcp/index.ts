@@ -1,11 +1,13 @@
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { ServerResponse } from "node:http";
 import loadBalancer from "../endpoint.ts";
-import * as Servers from "./server.ts";
+import generateServer from "./server.ts";
+import { ServerWrapper } from "../../shared/mcp.ts";
+import { createServerResponseAdapter } from "./server-response-adapter.ts";
 
 class MCPService {
   private transports: { [sessionId: string]: SSEServerTransport } = {};
-  private servers: { [sessionId: string]: McpServer } = {};
+  private servers: { [sessionId: string]: ServerWrapper } = {};
 
   async handleRequest(url: string, request: Request): Promise<Response> {
     // 处理请求并转发
@@ -29,17 +31,11 @@ class MCPService {
           }
         }
         default: {
-          const server = Servers[url as keyof typeof Servers];
+          const server = generateServer(url);
           if (server) {
-            const res = new Response();
-            const transport = new SSEServerTransport("/messages", res);
-            this.transports[transport.sessionId] = transport;
-            transport.onclose = () => {
-              delete this.transports[transport.sessionId];
-              delete this.servers[transport.sessionId];
-            };
-            await server.connect(transport);
-            return res;
+            return createServerResponseAdapter(request.signal, (res) => {
+              server.server(request, res);
+            });
           } else {
             return new Response(JSON.stringify({ error: "Not found" }), {
               status: 404,

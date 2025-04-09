@@ -2,13 +2,15 @@
   "tasks": {
     "start": "deno run -A --unstable-kv --unstable-broadcast-channel --env-file=.env --watch=static/,routes/ dev.ts",
     "build": "deno run -A --unstable-kv --unstable-broadcast-channel dev.ts build",
-    "preview": "deno run -A main.ts"
+    "preview": "deno run -A main.ts",
+    "install_types": "deno run -A --unstable --location=https://deno.land/ https://deno.land/x/install_types/install.ts @types/node"
   },
   "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "preact" },
   "nodeModulesDir": "auto",
   "imports": {
     "$fresh/": "https://deno.land/x/fresh@1.7.3/",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.8.0",
+    "chalk": "npm:chalk@^5.4.1",
     "clsx": "https://esm.sh/clsx@^2.1.1",
     "preact": "https://esm.sh/preact@10.22.0",
     "preact/": "https://esm.sh/preact@10.22.0/",
