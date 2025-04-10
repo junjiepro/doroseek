@@ -8,7 +8,6 @@ import {
 import { Socket } from "node:net";
 import { Readable } from "node:stream";
 import { ServerOptions } from "@modelcontextprotocol/sdk/server/index.js";
-import { maxDuration } from "@/app/sse/route";
 import { Buffer } from "node:buffer";
 
 interface SerializedRequest {
@@ -18,6 +17,8 @@ interface SerializedRequest {
   body: string;
   headers: IncomingHttpHeaders;
 }
+
+const maxDuration = 60;
 
 export function initializeMcpApiHandler(
   initializeServer: (server: McpServer) => void,
