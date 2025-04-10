@@ -4,6 +4,7 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 // Fixed chalk import for ESM
 import chalk from "chalk";
 
@@ -150,9 +151,7 @@ class SequentialThinkingServer {
   }
 }
 
-const SEQUENTIAL_THINKING_TOOL: Tool = {
-  name: "sequentialthinking",
-  description: `A detailed tool for dynamic and reflective problem-solving through thoughts.
+const SEQUENTIAL_THINKING_TOOL_DESCRIPTION = `Sequential Thinking: A detailed tool for dynamic and reflective problem-solving through thoughts.
 This tool helps analyze problems through a flexible thinking process that can adapt and evolve.
 Each thought can build on, question, or revise previous insights as understanding deepens.
 
@@ -205,83 +204,30 @@ You should:
 8. Verify the hypothesis based on the Chain of Thought steps
 9. Repeat the process until satisfied with the solution
 10. Provide a single, ideally correct answer as the final output
-11. Only set next_thought_needed to false when truly done and a satisfactory answer is reached`,
-  inputSchema: {
-    type: "object",
-    properties: {
-      thought: {
-        type: "string",
-        description: "Your current thinking step",
-      },
-      nextThoughtNeeded: {
-        type: "boolean",
-        description: "Whether another thought step is needed",
-      },
-      thoughtNumber: {
-        type: "integer",
-        description: "Current thought number",
-        minimum: 1,
-      },
-      totalThoughts: {
-        type: "integer",
-        description: "Estimated total thoughts needed",
-        minimum: 1,
-      },
-      isRevision: {
-        type: "boolean",
-        description: "Whether this revises previous thinking",
-      },
-      revisesThought: {
-        type: "integer",
-        description: "Which thought is being reconsidered",
-        minimum: 1,
-      },
-      branchFromThought: {
-        type: "integer",
-        description: "Branching point thought number",
-        minimum: 1,
-      },
-      branchId: {
-        type: "string",
-        description: "Branch identifier",
-      },
-      needsMoreThoughts: {
-        type: "boolean",
-        description: "If more thoughts are needed",
-      },
-    },
-    required: [
-      "thought",
-      "nextThoughtNeeded",
-      "thoughtNumber",
-      "totalThoughts",
-    ],
-  },
-};
+11. Only set next_thought_needed to false when truly done and a satisfactory answer is reached`;
 
 const thinkingServer = new SequentialThinkingServer();
 
 const mcpHandler = initializeMcpApiHandler(
   (server) => {
-    server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [SEQUENTIAL_THINKING_TOOL],
-    }));
-
-    server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      if (request.params.name === "sequentialthinking") {
-        return thinkingServer.processThought(request.params.arguments);
+    server.tool(
+      "sequentialthinking",
+      SEQUENTIAL_THINKING_TOOL_DESCRIPTION,
+      {
+        thought: z.string(),
+        nextThoughtNeeded: z.boolean(),
+        thoughtNumber: z.number(),
+        totalThoughts: z.number(),
+        isRevision: z.boolean().optional(),
+        revisesThought: z.number().optional(),
+        branchFromThought: z.number().optional(),
+        branchId: z.string().optional(),
+        needsMoreThoughts: z.boolean().optional(),
+      },
+      async (args) => {
+        return thinkingServer.processThought(args);
       }
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Unknown tool: ${request.params.name}`,
-          },
-        ],
-        isError: true,
-      };
-    });
+    );
   },
   {
     capabilities: {
