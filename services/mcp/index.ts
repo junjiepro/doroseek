@@ -1,5 +1,4 @@
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
-import { ServerResponse } from "node:http";
 import loadBalancer from "../endpoint.ts";
 import generateServer from "./server.ts";
 import { ServerWrapper } from "../../shared/mcp.ts";
@@ -12,26 +11,15 @@ class MCPService {
   async handleRequest(url: string, request: Request): Promise<Response> {
     // 处理请求并转发
     const origin = new URL(request.url);
-    const pass = await checkAuth(url, origin.searchParams.get("_apiKey")!);
+    const pass = await checkAuth(url, origin.searchParams.get("apiKey")!);
     if (pass) {
-      switch (url) {
-        // 消息
-        case "messages": {
-          const sessionId = origin.searchParams.get("sessionId") ?? "";
-          const transport = this.transports[sessionId];
-          if (transport) {
-            const res = new Response();
-            await transport.handlePostMessage(request, res);
-            return res;
-          } else {
-            return new Response(
-              JSON.stringify({ error: "No transport found for sessionId" }),
-              { status: 400, headers: { "Content-Type": "application/json" } }
-            );
-          }
-        }
-        default: {
-          const server = generateServer(url);
+      const paths = origin.pathname.split("/");
+      const end = paths.pop();
+      const serverName = paths.join("/");
+      switch (end) {
+        // message
+        case "message": {
+          const server = generateServer(serverName);
           if (server) {
             return createServerResponseAdapter(request.signal, (res) => {
               server.server(request, res);
@@ -42,6 +30,26 @@ class MCPService {
               headers: { "Content-Type": "application/json" },
             });
           }
+        }
+        // sse
+        case "sse": {
+          const server = generateServer(serverName);
+          if (server) {
+            return createServerResponseAdapter(request.signal, (res) => {
+              server.server(request, res);
+            });
+          } else {
+            return new Response(JSON.stringify({ error: "Not found" }), {
+              status: 404,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        }
+        default: {
+          return new Response(JSON.stringify({ error: "Not found" }), {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          });
         }
       }
     } else {
