@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
 
 import { type ServerResponse } from "node:http";
@@ -44,10 +45,7 @@ export function createServerResponseAdapter(
 
     let bufferedData: Uint8Array[] = [];
 
-    const write = (
-      chunk: Buffer | string,
-      encoding?: BufferEncoding
-    ): boolean => {
+    const write = (chunk: Buffer | string, encoding?: any): boolean => {
       if (encoding) {
         throw new Error("Encoding not supported");
       }
