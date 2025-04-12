@@ -209,6 +209,7 @@ You should:
 const thinkingServer = new SequentialThinkingServer();
 
 const mcpHandler = initializeMcpApiHandler(
+  "sequentialthinking",
   (server) => {
     server.tool(
       "sequentialthinking",
@@ -224,7 +225,7 @@ const mcpHandler = initializeMcpApiHandler(
         branchId: z.string().optional(),
         needsMoreThoughts: z.boolean().optional(),
       },
-      async (args) => {
+      (args) => {
         return thinkingServer.processThought(args);
       }
     );

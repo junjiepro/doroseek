@@ -9,6 +9,7 @@ import { Socket } from "node:net";
 import { Readable } from "node:stream";
 import { ServerOptions } from "@modelcontextprotocol/sdk/server/index.js";
 import { Buffer } from "node:buffer";
+import { db } from "../database.ts";
 
 interface SerializedRequest {
   requestId: string;
@@ -21,6 +22,7 @@ interface SerializedRequest {
 const maxDuration = 60;
 
 export function initializeMcpApiHandler(
+  serverPath: string,
   initializeServer: (server: McpServer) => void,
   serverOptions: ServerOptions = {}
 ) {
@@ -28,14 +30,17 @@ export function initializeMcpApiHandler(
 
   return async function mcpApiHandler(req: Request, res: ServerResponse) {
     const url = new URL(req.url || "", "https://example.com");
-    if (url.pathname === "/sse") {
+    if (url.pathname === `/mcp/${serverPath}/sse`) {
       console.log("Got new SSE connection");
 
-      const transport = new SSEServerTransport("/message", res);
+      const transport = new SSEServerTransport(
+        `/mcp/${serverPath}/message`,
+        res
+      );
       const sessionId = transport.sessionId;
       const server = new McpServer(
         {
-          name: "mcp-typescript server on vercel",
+          name: `mcp server ${serverPath} on doroseek`,
           version: "0.1.0",
         },
         serverOptions
@@ -62,53 +67,6 @@ export function initializeMcpApiHandler(
         });
       }
 
-      // Handles messages originally received via /message
-      const handleMessage = async (message: string) => {
-        console.log("Received message from Redis", message);
-        logInContext("log", "Received message from Redis", message);
-        const request = JSON.parse(message) as SerializedRequest;
-
-        // Make in IncomingMessage object because that is what the SDK expects.
-        const req = createFakeIncomingMessage({
-          method: request.method,
-          url: request.url,
-          headers: request.headers,
-          body: request.body,
-        });
-        const syntheticRes = new ServerResponse(req);
-        let status = 100;
-        let body = "";
-        syntheticRes.writeHead = (statusCode: number) => {
-          status = statusCode;
-          return syntheticRes;
-        };
-        syntheticRes.end = (b: unknown) => {
-          body = b as string;
-          return syntheticRes;
-        };
-        await transport.handlePostMessage(req, syntheticRes);
-
-        await redisPublisher.publish(
-          `responses:${sessionId}:${request.requestId}`,
-          JSON.stringify({
-            status,
-            body,
-          })
-        );
-
-        if (status >= 200 && status < 300) {
-          logInContext(
-            "log",
-            `Request ${sessionId}:${request.requestId} succeeded: ${body}`
-          );
-        } else {
-          logInContext(
-            "error",
-            `Message for ${sessionId}:${request.requestId} failed with status ${status}: ${body}`
-          );
-        }
-      };
-
       const interval = setInterval(() => {
         for (const log of logs) {
           console[log.type].call(console, ...log.messages);
@@ -116,7 +74,69 @@ export function initializeMcpApiHandler(
         logs = [];
       }, 100);
 
-      await redis.subscribe(`requests:${sessionId}`, handleMessage);
+      const stream = db.watch([["requests", sessionId]]).getReader();
+      // Handles messages originally received via /message
+      const handleMessage = async () => {
+        while (true) {
+          try {
+            if ((await stream.read()).done) {
+              return;
+            }
+
+            const message = (
+              await db.get(["requests", sessionId], { consistency: "strong" })
+            ).value as string;
+            if (!message) continue;
+            console.log("Received message from Redis", message);
+            logInContext("log", "Received message from Redis", message);
+            const request = JSON.parse(message) as SerializedRequest;
+
+            // Make in IncomingMessage object because that is what the SDK expects.
+            const req = createFakeIncomingMessage({
+              method: request.method,
+              url: request.url,
+              headers: request.headers,
+              body: request.body,
+            });
+            const syntheticRes = new ServerResponse(req);
+            let status = 100;
+            let body = "";
+            syntheticRes.writeHead = (statusCode: number) => {
+              status = statusCode;
+              return syntheticRes;
+            };
+            syntheticRes.end = (b: unknown) => {
+              body = b as string;
+              return syntheticRes;
+            };
+            await transport.handlePostMessage(req, syntheticRes);
+
+            await db.set(
+              ["responses", sessionId, request.requestId],
+              JSON.stringify({
+                status,
+                body,
+              }),
+              { expireIn: maxDuration * 1000 }
+            );
+
+            if (status >= 200 && status < 300) {
+              logInContext(
+                "log",
+                `Request ${sessionId}:${request.requestId} succeeded: ${body}`
+              );
+            } else {
+              logInContext(
+                "error",
+                `Message for ${sessionId}:${request.requestId} failed with status ${status}: ${body}`
+              );
+            }
+          } catch (e) {
+            console.error(`Error get message, requests ${sessionId}`, e);
+          }
+        }
+      };
+      handleMessage();
       console.log(`Subscribed to requests:${sessionId}`);
 
       let timeout: number;
@@ -131,7 +151,7 @@ export function initializeMcpApiHandler(
       async function cleanup() {
         clearTimeout(timeout);
         clearInterval(interval);
-        await redis.unsubscribe(`requests:${sessionId}`, handleMessage);
+        stream.cancel();
         console.log("Done");
         res.statusCode = 200;
         res.end();
@@ -144,7 +164,7 @@ export function initializeMcpApiHandler(
       const closeReason = await waitPromise;
       console.log(closeReason);
       await cleanup();
-    } else if (url.pathname === "/message") {
+    } else if (url.pathname === `/mcp/${serverPath}/message`) {
       console.log("Received message");
 
       const body = await req.text();
@@ -165,36 +185,54 @@ export function initializeMcpApiHandler(
       };
 
       // Handles responses from the /sse endpoint.
-      await redis.subscribe(
-        `responses:${sessionId}:${requestId}`,
-        (message) => {
-          clearTimeout(timeout);
-          const response = JSON.parse(message) as {
-            status: number;
-            body: string;
-          };
-          res.statusCode = response.status;
-          res.end(response.body);
+      const stream = db
+        .watch([["responses", sessionId, requestId]])
+        .getReader();
+      const handleMessage = async () => {
+        while (true) {
+          try {
+            if ((await stream.read()).done) {
+              return;
+            }
+            const message = (
+              await db.get(["responses", sessionId, requestId], {
+                consistency: "strong",
+              })
+            ).value as string;
+            if (!message) continue;
+            clearTimeout(timeout);
+            const response = JSON.parse(message) as {
+              status: number;
+              body: string;
+            };
+            res.statusCode = response.status;
+            res.end(response.body);
+          } catch (e) {
+            console.error(
+              `Error get message, responses ${sessionId} ${requestId}`,
+              e
+            );
+          }
         }
-      );
+      };
+      handleMessage();
 
       // Queue the request in Redis so that a subscriber can pick it up.
       // One queue per session.
-      await redisPublisher.publish(
-        `requests:${sessionId}`,
-        JSON.stringify(serializedRequest)
-      );
+      await db.set(["requests", sessionId], JSON.stringify(serializedRequest), {
+        expireIn: maxDuration * 1000,
+      });
       console.log(`Published requests:${sessionId}`, serializedRequest);
 
       let timeout = setTimeout(async () => {
-        await redis.unsubscribe(`responses:${sessionId}:${requestId}`);
+        stream.cancel();
         res.statusCode = 408;
         res.end("Request timed out");
       }, 10 * 1000);
 
       res.on("close", async () => {
         clearTimeout(timeout);
-        await redis.unsubscribe(`responses:${sessionId}:${requestId}`);
+        stream.cancel();
       });
     } else {
       res.statusCode = 404;

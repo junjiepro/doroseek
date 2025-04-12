@@ -13,7 +13,7 @@ class MCPService {
     const origin = new URL(request.url);
     const pass = await checkAuth(url, origin.searchParams.get("apiKey")!);
     if (pass) {
-      const paths = origin.pathname.split("/");
+      const paths = url.split("/");
       const end = paths.pop();
       const serverName = paths.join("/");
       switch (end) {
@@ -62,7 +62,8 @@ class MCPService {
 }
 
 const checkAuth = async (url: string, apiKey: string) => {
-  if (url === "messages") return true;
+  if (!apiKey) return false;
+  if (url === "message") return true;
 
   const config = await loadBalancer.loadEndpointConfig(apiKey);
 
