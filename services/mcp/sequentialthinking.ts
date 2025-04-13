@@ -206,11 +206,11 @@ You should:
 10. Provide a single, ideally correct answer as the final output
 11. Only set next_thought_needed to false when truly done and a satisfactory answer is reached`;
 
-const thinkingServer = new SequentialThinkingServer();
-
 const mcpHandler = initializeMcpApiHandler(
   "sequentialthinking",
   (server) => {
+    const thinkingServer = new SequentialThinkingServer();
+
     server.tool(
       "sequentialthinking",
       SEQUENTIAL_THINKING_TOOL_DESCRIPTION,
