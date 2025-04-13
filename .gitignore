@@ -2,3 +2,5 @@
 _fresh/
 
 node_modules/
+
+.env

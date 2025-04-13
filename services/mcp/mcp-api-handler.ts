@@ -19,7 +19,7 @@ interface SerializedRequest {
   headers: IncomingHttpHeaders;
 }
 
-const maxDuration = 60;
+const maxDuration = parseInt(Deno.env.get("MCP_MAX_DURATION") || "60");
 
 export function initializeMcpApiHandler(
   serverPath: string,
@@ -117,7 +117,7 @@ export function initializeMcpApiHandler(
                 status,
                 body,
               }),
-              { expireIn: maxDuration * 1000 }
+              { expireIn: 60 * 1000 }
             );
 
             if (status >= 200 && status < 300) {
@@ -220,7 +220,7 @@ export function initializeMcpApiHandler(
       // Queue the request in KV so that a subscriber can pick it up.
       // One queue per session.
       await db.set(["requests", sessionId], JSON.stringify(serializedRequest), {
-        expireIn: maxDuration * 1000,
+        expireIn: 60 * 1000,
       });
       console.log(`Published requests:${sessionId}`, serializedRequest);
 
