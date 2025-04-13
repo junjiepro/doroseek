@@ -87,8 +87,8 @@ export function initializeMcpApiHandler(
               await db.get(["requests", sessionId], { consistency: "strong" })
             ).value as string;
             if (!message) continue;
-            console.log("Received message from Redis", message);
-            logInContext("log", "Received message from Redis", message);
+            console.log("Received message from KV", message);
+            logInContext("log", "Received message from KV", message);
             const request = JSON.parse(message) as SerializedRequest;
 
             // Make in IncomingMessage object because that is what the SDK expects.
@@ -217,7 +217,7 @@ export function initializeMcpApiHandler(
       };
       handleMessage();
 
-      // Queue the request in Redis so that a subscriber can pick it up.
+      // Queue the request in KV so that a subscriber can pick it up.
       // One queue per session.
       await db.set(["requests", sessionId], JSON.stringify(serializedRequest), {
         expireIn: maxDuration * 1000,
@@ -289,7 +289,10 @@ function createFakeIncomingMessage(
   // Copy over the stream methods
   req.push = readable.push.bind(readable);
   req.read = readable.read.bind(readable);
-  req.on = readable.on.bind(readable);
+  req.on = (event: string, listener: (...args: any[]) => void) => {
+    readable.on(event, listener);
+    return req;
+  };
   req.pipe = readable.pipe.bind(readable);
 
   return req;
