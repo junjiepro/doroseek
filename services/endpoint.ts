@@ -1,4 +1,4 @@
-import { getParentKey, loadList } from "../services/database.ts";
+import { db, getParentKey, loadList } from "../services/database.ts";
 
 interface Endpoint {
   id: string;
@@ -17,34 +17,59 @@ interface EndpointConfig {
 }
 
 class LoadBalancer {
+  private id: string;
   private endpoints: Record<string, EndpointConfig>;
   private keys: Record<string, string>;
   private readonly maxRetries: number;
-  private readonly channel: BroadcastChannel;
 
   constructor(maxRetries = 3) {
+    this.id = crypto.randomUUID();
     this.endpoints = {};
     this.keys = {};
     this.maxRetries = maxRetries;
 
-    this.channel = new BroadcastChannel("endpoints");
-    this.channel.onmessage = (e) => {
-      if (e.data.type === "removeEndpoint") {
-        this.removeEndpoint(e.data.listId);
-      } else if (e.data.type === "removeKey") {
-        this.removeKey(e.data.key);
+    setTimeout(() => this.watch(), 100);
+  }
+
+  async watch(): Promise<void> {
+    const stream = db.watch([["endpoints_channel"]]).getReader();
+    while (true) {
+      const { done } = await stream.read();
+      if (done) return;
+
+      const data = await db.get(["endpoints_channel"], {
+        consistency: "strong",
+      });
+      if (data.value) {
+        try {
+          const json = JSON.parse(data.value as string);
+          if (json.id === this.id) continue;
+          if (json.type === "removeEndpoint") {
+            this.removeEndpoint(json.listId);
+          } else if (json.type === "removeKey") {
+            this.removeKey(json.key);
+          }
+        } catch (e) {
+          console.error(e);
+        }
       }
-    };
+    }
   }
 
   removeEndpoint(listId: string): void {
     delete this.endpoints[listId];
-    this.channel.postMessage({ type: "removeEndpoint", listId });
+    db.set(
+      ["endpoints_channel"],
+      JSON.stringify({ id: this.id, type: "removeEndpoint", listId })
+    );
   }
 
   removeKey(key: string): void {
     delete this.keys[key];
-    this.channel.postMessage({ type: "removeKey", key });
+    db.set(
+      ["endpoints_channel"],
+      JSON.stringify({ id: this.id, type: "removeKey", key })
+    );
   }
 
   async loadEndpointConfig(listId: string): Promise<EndpointConfig | null> {
