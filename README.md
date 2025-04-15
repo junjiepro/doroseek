@@ -16,8 +16,9 @@ A simple AI app built with Deno and Fresh.
   - route
     - manage route: `/{key}`
     - OpenAI Compatible route: `/api`
-- MCP Server
-  - sequentialthinking
+- MCP SSE Server
+  - sequentialthinking -
+    [Sequential Thinking](https://github.com/modelcontextprotocol/servers/blob/main/src/sequentialthinking)
   - route
     - `/mcp/{server}/sse?apiKey={apiKey}`
 
