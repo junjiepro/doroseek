@@ -19,6 +19,8 @@ A simple AI app built with Deno and Fresh.
 - MCP SSE Server
   - sequentialthinking -
     [Sequential Thinking](https://github.com/modelcontextprotocol/servers/blob/main/src/sequentialthinking)
+  - think -
+    [Think Tool MCP Server](https://github.com/PhillipRt/think-mcp-server)
   - route
     - `/mcp/{server}/sse?apiKey={apiKey}`
 

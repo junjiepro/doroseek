@@ -1,9 +1,4 @@
 import { initializeMcpApiHandler } from "./mcp-api-handler.ts";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  Tool,
-} from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 // Fixed chalk import for ESM
 import chalk from "chalk";
