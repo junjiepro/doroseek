@@ -1,4 +1,4 @@
-import { initializeMcpApiHandler } from "./mcp-api-handler.ts";
+import { initializeMcpApiHandler } from "../mcp-api-handler.ts";
 import { z } from "zod";
 
 const mcpHandler = initializeMcpApiHandler(

@@ -5,7 +5,7 @@ A simple AI app built with Deno and Fresh.
 1. Access all your OpenAI Compatible endpoints with the same base URL and API
    key. And you can share the `Doroseek` API key with others to access the
    endpoints.
-2. As MCP server with several build-in server.
+2. As MCP server with several build-in servers.
 
 ## Features
 

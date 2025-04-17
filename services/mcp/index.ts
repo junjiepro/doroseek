@@ -1,5 +1,5 @@
 import loadBalancer from "../endpoint.ts";
-import generateServer from "./server.ts";
+import generateServer from "./server/index.ts";
 import { createServerResponseAdapter } from "./server-response-adapter.ts";
 
 class MCPService {
