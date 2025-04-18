@@ -80,68 +80,51 @@ export function initializeMcpApiHandler(
         logs = [];
       }, 100);
 
-      const stream = db.watch([["requests", sessionId]]).getReader();
-      // Handles messages originally received via /message
-      const handleMessage = async () => {
-        while (true) {
-          try {
-            if ((await stream.read()).done) {
-              return;
-            }
+      const channel = new BroadcastChannel(`requests-${sessionId}`);
+      channel.onmessage = async (e) => {
+        if (e.data) {
+          // logInContext("log", "Received message from KV", message);
+          const request = e.data as SerializedRequest;
 
-            const message = (
-              await db.get(["requests", sessionId], { consistency: "strong" })
-            ).value as string;
-            if (!message) continue;
-            // logInContext("log", "Received message from KV", message);
-            const request = JSON.parse(message) as SerializedRequest;
+          // Make in IncomingMessage object because that is what the SDK expects.
+          const req = createFakeIncomingMessage({
+            method: request.method,
+            url: request.url,
+            headers: request.headers,
+            body: request.body,
+          });
+          const syntheticRes = new ServerResponse(req);
+          let status = 100;
+          let body = "";
+          syntheticRes.writeHead = (statusCode: number) => {
+            status = statusCode;
+            return syntheticRes;
+          };
+          syntheticRes.end = (b: unknown) => {
+            body = b as string;
+            return syntheticRes;
+          };
+          await transport.handlePostMessage(req, syntheticRes);
 
-            // Make in IncomingMessage object because that is what the SDK expects.
-            const req = createFakeIncomingMessage({
-              method: request.method,
-              url: request.url,
-              headers: request.headers,
-              body: request.body,
-            });
-            const syntheticRes = new ServerResponse(req);
-            let status = 100;
-            let body = "";
-            syntheticRes.writeHead = (statusCode: number) => {
-              status = statusCode;
-              return syntheticRes;
-            };
-            syntheticRes.end = (b: unknown) => {
-              body = b as string;
-              return syntheticRes;
-            };
-            await transport.handlePostMessage(req, syntheticRes);
+          const temp = new BroadcastChannel(
+            `responses-${sessionId}-${request.requestId}`
+          );
+          temp.postMessage({ status, body });
+          temp.close();
 
-            await db.set(
-              ["responses", sessionId, request.requestId],
-              JSON.stringify({
-                status,
-                body,
-              }),
-              { expireIn: 60 * 1000 }
+          if (status >= 200 && status < 300) {
+            logInContext(
+              "log",
+              `Request ${sessionId}:${request.requestId} succeeded: ${body}`
             );
-
-            if (status >= 200 && status < 300) {
-              logInContext(
-                "log",
-                `Request ${sessionId}:${request.requestId} succeeded: ${body}`
-              );
-            } else {
-              logInContext(
-                "error",
-                `Message for ${sessionId}:${request.requestId} failed with status ${status}: ${body}`
-              );
-            }
-          } catch (e) {
-            console.error(`Error get message, requests ${sessionId}`, e);
+          } else {
+            logInContext(
+              "error",
+              `Message for ${sessionId}:${request.requestId} failed with status ${status}: ${body}`
+            );
           }
         }
       };
-      handleMessage();
       console.log(`Subscribed to requests:${sessionId}`);
 
       let timeout: number;
@@ -156,7 +139,7 @@ export function initializeMcpApiHandler(
       async function cleanup() {
         clearTimeout(timeout);
         clearInterval(interval);
-        stream.cancel();
+        channel.close();
         console.log("Done");
         res.statusCode = 200;
         res.end();
@@ -193,54 +176,36 @@ export function initializeMcpApiHandler(
       };
 
       // Handles responses from the /sse endpoint.
-      const stream = db
-        .watch([["responses", sessionId, requestId]])
-        .getReader();
-      const handleMessage = async () => {
-        while (true) {
-          try {
-            if ((await stream.read()).done) {
-              return;
-            }
-            const message = (
-              await db.get(["responses", sessionId, requestId], {
-                consistency: "strong",
-              })
-            ).value as string;
-            if (!message) continue;
-            clearTimeout(timeout);
-            const response = JSON.parse(message) as {
-              status: number;
-              body: string;
-            };
-            res.statusCode = response.status;
-            res.end(response.body);
-          } catch (e) {
-            console.error(
-              `Error get message, responses ${sessionId} ${requestId}`,
-              e
-            );
-          }
+      const channel = new BroadcastChannel(
+        `responses-${sessionId}-${requestId}`
+      );
+      channel.onmessage = (e) => {
+        if (e.data) {
+          const response = e.data as {
+            status: number;
+            body: string;
+          };
+          res.statusCode = response.status;
+          res.end(response.body);
         }
       };
-      handleMessage();
 
       // Queue the request in KV so that a subscriber can pick it up.
       // One queue per session.
-      await db.set(["requests", sessionId], JSON.stringify(serializedRequest), {
-        expireIn: 60 * 1000,
-      });
+      const temp = new BroadcastChannel(`requests-${sessionId}`);
+      temp.postMessage(serializedRequest);
+      temp.close();
       console.log(`Published requests:${sessionId}`);
 
       let timeout = setTimeout(async () => {
-        stream.cancel();
+        channel.close();
         res.statusCode = 408;
         res.end("Request timed out");
       }, 10 * 1000);
 
       res.on("close", async () => {
         clearTimeout(timeout);
-        stream.cancel();
+        channel.close();
       });
     } else {
       res.statusCode = 404;
