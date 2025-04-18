@@ -6,6 +6,9 @@ A simple AI app built with Deno and Fresh.
    key. And you can share the `Doroseek` API key with others to access the
    endpoints.
 2. As MCP server with several build-in servers.
+3. As MCP Proxy server, connect to other MCP server.
+
+![Home](/home.png)
 
 ## Features
 
@@ -23,6 +26,14 @@ A simple AI app built with Deno and Fresh.
     [Think Tool MCP Server](https://github.com/PhillipRt/think-mcp-server)
   - route
     - `/mcp/{server}/sse?apiKey={apiKey}`
+- MCP Proxy Server
+  - route
+    - stdio:
+      `/mcp/proxy/sse?apiKey={apiKey}&transport=stdio&command=&args=&env=`
+    - sse: `/mcp/proxy/sse?apiKey={apiKey}&transport=sse&url=`
+  - examples
+    - [Sequential Thinking](https://github.com/modelcontextprotocol/servers/blob/main/src/sequentialthinking):
+      `/mcp/proxy/sse?apiKey={apiKey}&transport=stdio&command=npx&args=-y @modelcontextprotocol/server-sequential-thinking&env={}`
 
 ## Running locally
 
