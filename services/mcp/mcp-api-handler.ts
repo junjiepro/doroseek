@@ -23,7 +23,11 @@ const maxDuration = parseInt(Deno.env.get("MCP_MAX_DURATION") || "60");
 
 export function initializeMcpApiHandler(
   serverPath: string,
-  initializeServer: (server: McpServer) => void,
+  initializeServer: (
+    server: McpServer,
+    transport: SSEServerTransport,
+    req: Request
+  ) => boolean | undefined | Promise<boolean | undefined>,
   serverOptions: ServerOptions = {}
 ) {
   let servers: McpServer[] = [];
@@ -45,14 +49,16 @@ export function initializeMcpApiHandler(
         },
         serverOptions
       );
-      initializeServer(server);
+      const started = await initializeServer(server, transport, req);
 
-      servers.push(server);
+      if (!started) {
+        servers.push(server);
 
-      server.server.onclose = () => {
-        console.log("SSE connection closed");
-        servers = servers.filter((s) => s !== server);
-      };
+        server.server.onclose = () => {
+          console.log("SSE connection closed");
+          servers = servers.filter((s) => s !== server);
+        };
+      }
 
       let logs: {
         type: "log" | "error";
@@ -87,8 +93,7 @@ export function initializeMcpApiHandler(
               await db.get(["requests", sessionId], { consistency: "strong" })
             ).value as string;
             if (!message) continue;
-            console.log("Received message from KV", message);
-            logInContext("log", "Received message from KV", message);
+            // logInContext("log", "Received message from KV", message);
             const request = JSON.parse(message) as SerializedRequest;
 
             // Make in IncomingMessage object because that is what the SDK expects.
@@ -160,7 +165,10 @@ export function initializeMcpApiHandler(
         resolveTimeout("client hang up")
       );
 
-      await server.connect(transport);
+      if (!started) {
+        await server.connect(transport);
+      }
+
       const closeReason = await waitPromise;
       console.log(closeReason);
       await cleanup();
@@ -222,7 +230,7 @@ export function initializeMcpApiHandler(
       await db.set(["requests", sessionId], JSON.stringify(serializedRequest), {
         expireIn: 60 * 1000,
       });
-      console.log(`Published requests:${sessionId}`, serializedRequest);
+      console.log(`Published requests:${sessionId}`);
 
       let timeout = setTimeout(async () => {
         stream.cancel();

@@ -18,6 +18,8 @@ const mcpHandler = initializeMcpApiHandler(
         return args.thought;
       }
     );
+
+    return false;
   },
   {
     capabilities: {

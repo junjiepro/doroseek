@@ -21,6 +21,8 @@
     "preact-render-to-string": "https://esm.sh/*preact-render-to-string@5.2.4",
     "@preact/signals": "https://esm.sh/*@preact/signals@1.2.2",
     "@preact/signals-core": "https://esm.sh/*@preact/signals-core@1.5.1",
+    "shell-quote": "npm:shell-quote@^1.8.2",
+    "spawn-rx": "npm:spawn-rx@^5.1.2",
     "tailwind-merge": "https://esm.sh/tailwind-merge@^3.0.2",
     "tailwindcss": "https://esm.sh/tailwindcss@3.4.17",
     "$std/": "https://deno.land/std@0.177.0/",

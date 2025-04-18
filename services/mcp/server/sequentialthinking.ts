@@ -224,6 +224,8 @@ const mcpHandler = initializeMcpApiHandler(
         return thinkingServer.processThought(args);
       }
     );
+
+    return false;
   },
   {
     capabilities: {

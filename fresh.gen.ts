@@ -5,6 +5,7 @@
 import * as $_listId_ from "./routes/[listId].tsx";
 import * as $_app from "./routes/_app.tsx";
 import * as $_layout from "./routes/_layout.tsx";
+import * as $_middleware from "./routes/_middleware.ts";
 import * as $api from "./routes/api.tsx";
 import * as $index from "./routes/index.tsx";
 import * as $mcp from "./routes/mcp.tsx";
@@ -20,6 +21,7 @@ const manifest = {
     "./routes/[listId].tsx": $_listId_,
     "./routes/_app.tsx": $_app,
     "./routes/_layout.tsx": $_layout,
+    "./routes/_middleware.ts": $_middleware,
     "./routes/api.tsx": $api,
     "./routes/index.tsx": $index,
     "./routes/mcp.tsx": $mcp,
