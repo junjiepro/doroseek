@@ -53,9 +53,9 @@ These features leverage WebSockets for real-time communication and Deno KV for p
 This feature allows you to expose services running on your private network (e.g., a local development server, a database, or any TCP/HTTP service) to the public internet through a secure tunnel established with your `Doroseek` instance.
 
 **Local Agent:**
-To use this feature, a **local agent** (client software) must be run on the machine where the private services are accessible. The development of this local agent is separate from `Doroseek` itself. The agent is responsible for connecting to `Doroseek`, managing the tunnel, and forwarding traffic between `Doroseek` and the local services.
+To use this feature, a **local agent** (client software) must be run on the machine where the private services are accessible. `Doroseek` itself can also run in this "Agent Mode". For details on configuring and running `Doroseek` as a local agent, see the [Agent Mode](#agent-mode) section below. The agent is responsible for connecting to a remote `Doroseek` instance (acting as a relay), managing the tunnel, and forwarding traffic between the relay and the local services.
 
-**Registration Process:**
+**Registration Process (Agent to Relay):**
 
 1.  **Connection:** The local agent establishes a WebSocket connection to the `Doroseek` MCP server:
     ```
@@ -263,7 +263,9 @@ Allows users to upload small files or data snippets (e.g., configuration files, 
 
 ## Running locally
 
-### Configuration
+This section describes running `Doroseek` in its default **Server Mode**. For running `Doroseek` as a local agent for the Tunneling feature, see the [Agent Mode](#agent-mode) section.
+
+### Server Mode Configuration
 
 copy .env.example to .env
 
@@ -286,11 +288,98 @@ Set the db if needed
 export const db = await Deno.openKv("./db");
 ```
 
-### Running
+### Running in Server Mode
 
-To run the app locally, you will need to install Deno. Then run from the root of
-this repository:
+To run the app in its default server mode, ensure `DOROSEEK_AGENT_MODE_ENABLED` is not set to `"true"`.
+You will need to install Deno. Then run from the root of this repository:
 
 ```sh
 deno task start
 ```
+
+---
+
+## Agent Mode (for Intranet Penetration)
+
+`Doroseek` can also operate in **Agent Mode**. In this mode, it does not start the Fresh web server. Instead, it acts as a local client agent that connects to a remote `Doroseek` instance (acting as a relay server) to expose services from your private network to the internet.
+
+This is an alternative running mode to its default server mode. When Agent Mode is enabled and configured correctly, `Doroseek` will exclusively perform agent duties.
+
+### Agent Mode Configuration
+
+To enable and configure Agent Mode, you need to set the following environment variables:
+
+*   **`DOROSEEK_AGENT_MODE_ENABLED`**:
+    *   Set to `"true"` to enable Agent Mode. If this is not set to `"true"`, `Doroseek` will attempt to start in Server Mode.
+
+*   **`DOROSEEK_RELAY_URL`**:
+    *   The WebSocket URL of the remote `Doroseek` instance (acting as the relay server) to which this agent should connect. This URL should point to the relay's tunnel registration endpoint.
+    *   *Example:* `wss://your-remote-doroseek.com/mcp/tunnel/register`
+
+*   **`DOROSEEK_AGENT_API_KEY`**:
+    *   The API key that this agent will use to authenticate with the remote `Doroseek` relay server. This API key must be recognized and authorized by the relay server.
+
+*   **`DOROSEEK_AGENT_SERVICES_JSON`**:
+    *   A JSON string defining an array of local services that this agent should expose through the tunnel.
+    *   Each service object in the array must have the following fields:
+        *   `id` (string): A unique identifier for the service (chosen by you, e.g., "my-web").
+        *   `name` (string): A user-friendly name for the service (e.g., "My Local Web Server").
+        *   `type` (string): The type of service. Currently, only `"http"` is supported by the agent's HTTP handler.
+        *   `local_host` (string): The hostname or IP address of the local service (e.g., `"localhost"`, `"127.0.0.1"`).
+        *   `local_port` (number): The port number on which the local service is running (e.g., `8080`).
+        *   `subdomainOrPath` (string): A string that will be used by the relay server to form the public URL for this service. It should not contain `/` or spaces. It effectively becomes a path segment on the relay's public tunnel URL.
+            *   For example, if the relay provides a base URL like `https://<relay-public-domain>/t/<tunnelId>`, and you set `subdomainOrPath` to `"myweb"`, your service will be accessible at `https://<relay-public-domain>/t/<tunnelId>/myweb/...`.
+
+    *   **Example `DOROSEEK_AGENT_SERVICES_JSON` value:**
+        ```json
+        [
+          {
+            "id": "web1",
+            "name": "My Local Web Server",
+            "type": "http",
+            "local_host": "localhost",
+            "local_port": 8080,
+            "subdomainOrPath": "myweb"
+          },
+          {
+            "id": "api2",
+            "name": "Backend API",
+            "type": "http",
+            "local_host": "127.0.0.1",
+            "local_port": 3000,
+            "subdomainOrPath": "myapi"
+          }
+        ]
+        ```
+        To set this as an environment variable, the JSON string typically needs to be compact (no newlines) and properly escaped if set in certain shell environments. For example, in a `.env` file or shell:
+        `DOROSEEK_AGENT_SERVICES_JSON='[{"id":"web1","name":"My Local Web Server","type":"http","local_host":"localhost","local_port":8080,"subdomainOrPath":"myweb"},{"id":"api2","name":"Backend API","type":"http","local_host":"127.0.0.1","local_port":3000,"subdomainOrPath":"myapi"}]'`
+
+### Running in Agent Mode
+
+1.  Set all the required environment variables listed above. Ensure `DOROSEEK_AGENT_MODE_ENABLED` is set to `"true"`.
+2.  Run the application using the standard command:
+    ```sh
+    deno task start
+    ```
+3.  If the configuration is valid, `Doroseek` will start in Agent Mode. You will **not** see the usual Fresh server startup logs (e.g., "Listening on http://localhost:8000/").
+4.  Instead, look for log messages indicating Agent Mode operation, such as:
+    *   `[Main] Doroseek starting in Agent Mode.`
+    *   `[Agent Config] Agent configuration loaded successfully.`
+    *   `[Agent Connector] Initialized with Relay URL: wss://your-remote-doroseek.com/mcp/tunnel/register`
+    *   `[Agent Connector] Attempting to connect to ...`
+    *   `[Agent Connector] WebSocket connection established.`
+    *   `[Agent Connector] Sent registration request: ...`
+    *   `[Agent Connector] Successfully registered. Tunnel ID: <your-tunnel-id>, Public URL: <your-public-base-url>`
+    *   `[Main] Agent is connected and registered with the relay.`
+    *   `[Main] Tunnel ID: <your-tunnel-id>`
+    *   `[Main] Public Base URL: <your-public-base-url>`
+    *   `  - Service 'My Local Web Server' (web1) accessible via: <your-public-base-url>/myweb`
+    *   `  - Service 'Backend API' (api2) accessible via: <your-public-base-url>/myapi`
+
+### Interaction with the Relay (Agent Perspective)
+
+*   The agent (this `Doroseek` instance running in Agent Mode) establishes a WebSocket connection to the `DOROSEEK_RELAY_URL`, which should be the `/mcp/tunnel/register` endpoint of a remote `Doroseek` instance running in Server Mode.
+*   It sends a registration message detailing the local services defined in `DOROSEEK_AGENT_SERVICES_JSON`.
+*   The remote relay server, upon successful registration, provides the agent with a unique `tunnelId` and a `public_base_url`.
+*   Subsequently, when the relay server receives public HTTP requests matching the tunnel, it forwards these requests (as `httpRequest` messages) to the agent over the established WebSocket tunnel.
+*   The agent processes these `httpRequest` messages, makes requests to the configured local services, and sends `httpResponse` messages back to the relay.
