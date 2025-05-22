@@ -3,10 +3,16 @@ import { AgentServiceConfig } from "./config.ts";
 import {
   AgentHttpRequest,
   AgentHttpResponse,
-  HttpRequestData, // Type for incoming request data from relay
-  HttpResponseData, // Type for outgoing response data to relay
-} from "../../shared/tunnel.ts"; // Assuming shared/tunnel.ts is two levels up
+  // HttpRequestData, // Not directly used here, but part of AgentHttpRequest
+  HttpResponseData,
+} from "../../shared/tunnel.ts";
+import {
+  AgentPongMessage,
+  LocalServiceStatus,
+} from "../../shared/health.ts"; // For health check responses
 import { AgentConnector } from "./connector.ts";
+
+const LOCAL_SERVICE_HEALTH_CHECK_TIMEOUT_MS = 3000; // 3 seconds for local check
 
 // Helper to decode base64 string to Uint8Array, if needed for request body
 // (Assuming server sends body as base64 string for binary, or plain string for text)
@@ -87,8 +93,69 @@ export class AgentRequestHandler {
   ) {
     this.servicesConfig = servicesConfig;
     this.connector = connector;
-    console.log("[Agent Handler] Initialized with service configurations:", servicesConfig.map(s => s.id));
+    console.log("[Agent Handler] Initialized with service configurations:", servicesConfig.map(s => s.id || s.name));
   }
+
+  public async handleHealthCheckPing(healthCheckJobId: string): Promise<void> {
+    console.log(`[Agent Handler] Handling health check ping. Job ID: ${healthCheckJobId}`);
+    let status: LocalServiceStatus = "unconfigured";
+
+    if (this.servicesConfig.length > 0) {
+      // Check the first configured service
+      const serviceToCheck = this.servicesConfig[0];
+      // For HTTP services, construct a base URL to ping.
+      // For TCP, a different mechanism would be needed (not implemented here).
+      if (serviceToCheck.type === "http") {
+        const localCheckUrl = `http://${serviceToCheck.local_host}:${serviceToCheck.local_port}`;
+        console.log(`[Agent Handler] Pinging local service ${serviceToCheck.id} at ${localCheckUrl}`);
+        
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), LOCAL_SERVICE_HEALTH_CHECK_TIMEOUT_MS);
+
+        try {
+          const response = await fetch(localCheckUrl, {
+            method: "HEAD", // Use HEAD for a lightweight check
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+
+          if (response.ok || response.status < 500) { // Consider any non-5xx as "ok" for basic reachability
+            status = "ok";
+            console.log(`[Agent Handler] Local service ${serviceToCheck.id} responded OK (${response.status}) to HEAD request.`);
+          } else {
+            status = "error";
+            console.warn(`[Agent Handler] Local service ${serviceToCheck.id} responded with error: ${response.status}`);
+          }
+        } catch (error) {
+          clearTimeout(timeoutId);
+          if (error.name === "AbortError") {
+            status = "timeout";
+            console.warn(`[Agent Handler] Local service ${serviceToCheck.id} timed out.`);
+          } else {
+            status = "error";
+            console.error(`[Agent Handler] Error checking local service ${serviceToCheck.id}:`, error.message);
+          }
+        }
+      } else {
+        // For non-HTTP services, or if a more specific check is needed.
+        // For now, if it's not HTTP, we can't check it with fetch.
+        console.warn(`[Agent Handler] Cannot perform health check for non-HTTP service type: ${serviceToCheck.type}`);
+        status = "unconfigured"; // Or a new status like "type_not_supported_for_check"
+      }
+    } else {
+      console.log("[Agent Handler] No services configured for health check.");
+      status = "unconfigured";
+    }
+
+    const pongMessage: AgentPongMessage = {
+      type: "pong",
+      healthCheckJobId,
+      localServiceStatus: status,
+    };
+    this.connector.send(pongMessage as any); // Cast to TunnelMessage or ensure send() accepts AgentPongMessage
+    console.log(`[Agent Handler] Sent pong for Job ID ${healthCheckJobId} with status: ${status}`);
+  }
+
 
   public async handleIncomingRequest(message: AgentHttpRequest): Promise<void> {
     const { requestId, data: requestData } = message;

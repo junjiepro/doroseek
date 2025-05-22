@@ -14,6 +14,9 @@ import { loadAgentConfig, AgentConfig } from "./services/agent/config.ts";
 import { AgentConnector } from "./services/agent/connector.ts";
 import { AgentRequestHandler } from "./services/agent/handler.ts";
 
+// Imports for Inter-Instance Communication (Server Mode)
+import { initializeBroadcastListeners } from "./services/inter_instance_comms.ts";
+
 async function main() {
   // Attempt to load agent configuration
   const agentConfig: AgentConfig | null = loadAgentConfig();
@@ -36,6 +39,8 @@ async function main() {
     agentConnector.onHttpRequest = agentRequestHandler.handleIncomingRequest.bind(
       agentRequestHandler,
     );
+    // Set the request handler on the connector for other callbacks like health checks
+    agentConnector.setRequestHandler(agentRequestHandler);
     
     agentConnector.onReady = () => {
         console.log("[Main] Agent is connected and registered with the relay.");
@@ -67,6 +72,11 @@ async function main() {
     // Agent mode is not enabled or configuration is invalid. Start Fresh server.
     // loadAgentConfig() already logs reasons for invalid config or if agent mode is not enabled.
     console.log("[Main] Doroseek starting in Server Mode.");
+    
+    // Initialize BroadcastChannel listeners for inter-instance communication
+    initializeBroadcastListeners();
+    
+    // Start the Fresh server
     await start(manifest, freshConfig);
   }
 }

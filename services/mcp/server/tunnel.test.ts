@@ -1,21 +1,32 @@
 import {
+import {
   assert,
   assertEquals,
   assertExists,
   assertNotEquals,
-} from "https://deno.land/std@0.212.0/assert/mod.ts"; // Using a specific version for stability
+  assertObjectMatch,
+} from "https://deno.land/std@0.212.0/assert/mod.ts";
+import { spy, stub, returnsNext } from "https://deno.land/std@0.212.0/testing/mock.ts";
+import { FakeTime } from "https://deno.land/std@0.212.0/testing/time.ts";
 import { mockKv } from "../../../test_utils/mock_kv.ts";
 import * as db from "../../database.ts";
 import {
   tunnelWebSocketHandler,
-  activeTunnels, // For checking active connections
-  // pendingHttpRequests // For later tests if needed
+  activeTunnels,
+  pendingHttpRequests,
+  forwardRequestToLocalAgent,
+  performLocalAgentHealthCheck,
+  initiateForwardedAgentHealthCheck,
+  PendingRequestInfo, // Export this if not already
+  AgentHttpResponsePayload, // Export this if not already
 } from "./tunnel.ts";
-import { TunnelRegistration, TunnelService }_from "../../../shared/tunnel.ts"; // Import shared types
+import { TunnelRegistration, TunnelService } from "../../../shared/tunnel.ts";
+import { AgentPingMessage, AgentPongMessage, HealthStatusReport, LocalServiceStatus } from "../../../shared/health.ts";
+import * as interComms from "../../inter_instance_comms.ts"; // To mock post... functions
+import { RELAY_INSTANCE_ID } from "../../../lib/utils.ts"; // To check against self ID
 
 // --- Test Setup ---
-// Replace the real Deno KV with our mock before tests run
-(db as any).db = mockKv; // This casts to 'any' to bypass type checking for the mock assignment
+(db as any).db = mockKv;
 
 // --- Mock WebSocket ---
 // A more sophisticated mock might be needed for complex interactions
@@ -343,4 +354,305 @@ Deno.testSuite("Tunnel Service (services/mcp/server/tunnel.ts)", async (t) => {
 
 // Note: getActiveTunnelSocket is implicitly tested by the registration and reconnection tests
 // as they check the activeTunnels map. Direct test might be redundant here.
-// HTTP Forwarding tests will be in a separate file for routes.
+
+// --- New Tests for Inter-Instance Communication Aspects ---
+
+Deno.testSuite("Tunnel Service - Inter-Instance Aspects", async (t) => {
+  let postTunnelActivitySpy: any;
+  let postHttpResponseSpy: any;
+  let postHealthCheckResponseSpy: any;
+  let originalUpgradeWebSocket: any;
+  let fakeTime: FakeTime;
+
+
+  t.beforeEach(() => {
+    mockKv.clear();
+    MockWebSocket.resetInstances();
+    activeTunnels.clear();
+    pendingHttpRequests.clear();
+    (db as any).db = mockKv; // Ensure mockKv is reassigned if db module was re-evaluated
+
+    postTunnelActivitySpy = spy(interComms, "postTunnelActivityToChannel");
+    postHttpResponseSpy = spy(interComms, "postHttpResponseToChannel");
+    postHealthCheckResponseSpy = spy(interComms, "postHealthCheckResponseToChannel");
+    
+    originalUpgradeWebSocket = (Deno as any).upgradeWebSocket;
+    (Deno as any).upgradeWebSocket = mockUpgradeWebSocket;
+    fakeTime = new FakeTime();
+  });
+
+  t.afterEach(async () => {
+    postTunnelActivitySpy.restore();
+    postHttpResponseSpy.restore();
+    postHealthCheckResponseSpy.restore();
+    (Deno as any).upgradeWebSocket = originalUpgradeWebSocket;
+    await fakeTime.restore();
+  });
+
+  const setupRegisteredTunnel = async (tunnelId: string, apiKey: string): Promise<MockWebSocket> => {
+    const mockRequest = new Request("http://localhost/mcp/tunnel/register", {
+      headers: { "upgrade": "websocket", "sec-websocket-key": "test-key" },
+    });
+    tunnelWebSocketHandler(mockRequest, "register", apiKey);
+    const ws = MockWebSocket.instances[MockWebSocket.instances.length - 1];
+    ws.simulateOpen();
+    ws.simulateMessage({
+      type: "register",
+      data: { services: [{ type: "http", local_port: 3000, subdomain_or_path: "test" }] },
+    });
+    await fakeTime.runMicrotasks(); // Process registration
+    // Clear spy calls from registration to focus on subsequent actions
+    postTunnelActivitySpy.calls = []; 
+    return ws;
+  };
+
+
+  await t.step("Tunnel Activity - Announces 'connected' on new registration", async () => {
+    await setupRegisteredTunnel("tunnel-act-conn", "api-key-act");
+    
+    assertSpyCalls(postTunnelActivitySpy, 1);
+    const activityArgs = postTunnelActivitySpy.calls[0].args[0];
+    assertEquals(activityArgs.type, "tunnelActivity");
+    assertEquals(activityArgs.activity, "connected");
+    assertEquals(activityArgs.tunnelId, JSON.parse(MockWebSocket.instances[0].sentMessages[0]).data.tunnelId);
+  });
+
+  await t.step("Tunnel Activity - Announces 'connected' on reconnection", async () => {
+    const tunnelId = "tunnel-act-reconn";
+    const apiKey = "api-key-reconn";
+    await db.saveTunnel({ tunnelId, apiKey, agentId: apiKey, services: [], createdAt: "", status: "disconnected" });
+
+    const mockRequest = new Request(`http://localhost/mcp/tunnel/${tunnelId}`, {
+      headers: { "upgrade": "websocket", "sec-websocket-key": "test-key" },
+    });
+    tunnelWebSocketHandler(mockRequest, tunnelId, apiKey);
+    const ws = MockWebSocket.instances[0];
+    ws.simulateOpen(); // Triggers reconnection logic and announcement
+    await fakeTime.runMicrotasks();
+
+    assertSpyCalls(postTunnelActivitySpy, 1);
+    const activityArgs = postTunnelActivitySpy.calls[0].args[0];
+    assertEquals(activityArgs.activity, "connected");
+    assertEquals(activityArgs.tunnelId, tunnelId);
+  });
+
+  await t.step("Tunnel Activity - Announces 'disconnected' on agent close", async () => {
+    const ws = await setupRegisteredTunnel("tunnel-act-disc", "api-key-disc");
+    const tunnelId = JSON.parse(ws.sentMessages[0]).data.tunnelId;
+    postTunnelActivitySpy.calls = []; // Clear calls from setup
+
+    ws.close(1000, "Agent disconnecting");
+    await fakeTime.runMicrotasks(); // Allow onclose handler to run
+
+    assertSpyCalls(postTunnelActivitySpy, 1);
+    const activityArgs = postTunnelActivitySpy.calls[0].args[0];
+    assertEquals(activityArgs.activity, "disconnected");
+    assertEquals(activityArgs.tunnelId, tunnelId);
+  });
+
+  await t.step("HTTP Response Handling - Forwards response for 'forwarded' request via BroadcastChannel", async () => {
+    const ws = await setupRegisteredTunnel("tunnel-fwd-resp", "api-key-fwd-resp");
+    const tunnelId = JSON.parse(ws.sentMessages[0]).data.tunnelId;
+    
+    const agentRequestId = "agent-req-id-1";
+    const originalJobId = "original-job-id-1";
+    const originalInstanceId = "instance-origin";
+
+    pendingHttpRequests.set(agentRequestId, {
+      type: "forwarded",
+      originalJobId,
+      originalInstanceId,
+    });
+
+    const agentResponsePayload: AgentHttpResponsePayload = {
+      status: 200,
+      headers: { "x-agent-resp": "true" },
+      body: "agent data",
+    };
+    ws.simulateMessage({ type: "httpResponse", requestId: agentRequestId, data: agentResponsePayload });
+    await fakeTime.runMicrotasks();
+
+    assertSpyCalls(postHttpResponseSpy, 1);
+    const broadcastArgs = postHttpResponseSpy.calls[0].args[0];
+    assertEquals(broadcastArgs.tunnelId, tunnelId);
+    assertEquals(broadcastArgs.requestId, originalJobId); // Should be originalJobId
+    assertEquals(broadcastArgs.targetInstanceId, originalInstanceId);
+    assertObjectMatch(broadcastArgs.responseData, agentResponsePayload);
+    assert(!pendingHttpRequests.has(agentRequestId), "Pending request should be cleared");
+  });
+  
+  await t.step("forwardRequestToLocalAgent - Sends to local agent if connected", async () => {
+    const ws = await setupRegisteredTunnel("fwd-to-local-tunnel", "fwd-to-local-key");
+    const tunnelId = JSON.parse(ws.sentMessages[0]).data.tunnelId;
+    ws.sentMessages = []; // Clear messages from setup
+
+    const agentRequestId = "new-agent-req-id"; // This will be generated by forwardRequestToLocalAgent
+    const originalJobId = "orig-job-fwd";
+    const originalInstanceId = "orig-instance-fwd";
+    const requestData = { method: "GET", path: "/data", headers: {}, body: null };
+
+    // Need to mock uuidv4 if we want to predict agentRequestId
+    const uuidStub = stub(crypto, "randomUUID", returnsNext([agentRequestId.replace("new-","")])); // Simplify, assume it's just the base
+
+    const success = forwardRequestToLocalAgent(tunnelId, agentRequestId, originalJobId, originalInstanceId, requestData);
+    uuidStub.restore();
+
+    assert(success, "forwardRequestToLocalAgent should return true");
+    assertEquals(ws.sentMessages.length, 1, "Agent should receive one message");
+    const sentToAgent = JSON.parse(ws.sentMessages[0]);
+    assertEquals(sentToAgent.type, "httpRequest");
+    assertEquals(sentToAgent.requestId, agentRequestId);
+    assertObjectMatch(sentToAgent.data, requestData);
+
+    const pendingInfo = pendingHttpRequests.get(agentRequestId);
+    assertExists(pendingInfo);
+    assertEquals(pendingInfo?.type, "forwarded");
+    if (pendingInfo?.type === "forwarded") {
+      assertEquals(pendingInfo.originalJobId, originalJobId);
+      assertEquals(pendingInfo.originalInstanceId, originalInstanceId);
+    }
+  });
+
+  await t.step("forwardRequestToLocalAgent - Broadcasts 502 error if agent not connected", async () => {
+    const tunnelId = "fwd-no-agent-tunnel";
+    // Do not set up an active tunnel for tunnelId
+    
+    const agentRequestId = "agent-req-no-socket";
+    const originalJobId = "orig-job-no-socket";
+    const originalInstanceId = "orig-instance-no-socket";
+    const requestData = { method: "GET", path: "/data", headers: {}, body: null };
+
+    const success = forwardRequestToLocalAgent(tunnelId, agentRequestId, originalJobId, originalInstanceId, requestData);
+
+    assert(!success, "forwardRequestToLocalAgent should return false");
+    assertSpyCalls(postHttpResponseSpy, 1);
+    const broadcastArgs = postHttpResponseSpy.calls[0].args[0];
+    assertEquals(broadcastArgs.tunnelId, tunnelId);
+    assertEquals(broadcastArgs.requestId, originalJobId);
+    assertEquals(broadcastArgs.targetInstanceId, originalInstanceId);
+    assertEquals(broadcastArgs.responseData.status, 502);
+    assertStringIncludes(broadcastArgs.responseData.body!, `Agent for tunnel ${tunnelId} not connected`);
+    assert(!pendingHttpRequests.has(agentRequestId), "No pending request should be stored if agent not found");
+  });
+
+  // --- Health Check related function tests ---
+  await t.step("performLocalAgentHealthCheck - Agent connected and pongs", async () => {
+    const ws = await setupRegisteredTunnel("health-local-pong", "health-key-pong");
+    const tunnelId = JSON.parse(ws.sentMessages[0]).data.tunnelId;
+    ws.sentMessages = []; // Clear setup messages
+
+    const healthPromise = performLocalAgentHealthCheck(tunnelId);
+    await fakeTime.runMicrotasks(); // Allow ping to be sent
+
+    assertEquals(ws.sentMessages.length, 1);
+    const pingMsg = JSON.parse(ws.sentMessages[0]) as AgentPingMessage;
+    assertEquals(pingMsg.type, "ping");
+    assertExists(pingMsg.healthCheckJobId);
+
+    // Simulate agent pong
+    const pongPayload: AgentPongMessage = {
+      type: "pong",
+      healthCheckJobId: pingMsg.healthCheckJobId,
+      localServiceStatus: "ok",
+    };
+    ws.simulateMessage(pongPayload);
+
+    const report = await healthPromise;
+    assertEquals(report.tunnelId, tunnelId);
+    assertEquals(report.tunnelStatus, "connected");
+    assertEquals(report.localServiceStatus, "ok");
+    assertEquals(report.checkedByInstanceId, RELAY_INSTANCE_ID);
+  });
+
+  await t.step("performLocalAgentHealthCheck - Agent connected but times out", async () => {
+    const ws = await setupRegisteredTunnel("health-local-timeout", "health-key-timeout");
+    const tunnelId = JSON.parse(ws.sentMessages[0]).data.tunnelId;
+    
+    const healthPromise = performLocalAgentHealthCheck(tunnelId);
+    // Do not simulate pong, let timeout trigger
+    await fakeTime.tickAsync(10000 + 500); // HEALTH_CHECK_AGENT_TIMEOUT_MS + buffer
+    
+    const report = await healthPromise;
+    assertEquals(report.tunnelId, tunnelId);
+    assertEquals(report.tunnelStatus, "connected");
+    assertEquals(report.localServiceStatus, "agent_unresponsive");
+  });
+
+  await t.step("performLocalAgentHealthCheck - Agent not connected", async () => {
+    const tunnelId = "health-local-no-agent";
+    // No active tunnel for this ID
+    const report = await performLocalAgentHealthCheck(tunnelId);
+    assertEquals(report.tunnelId, tunnelId);
+    assertEquals(report.tunnelStatus, "disconnected");
+    assertEquals(report.localServiceStatus, "unknown");
+  });
+
+  await t.step("initiateForwardedAgentHealthCheck - Agent connected and pongs, broadcasts response", async () => {
+    const ws = await setupRegisteredTunnel("health-fwd-pong", "health-key-fwd-pong");
+    const tunnelId = JSON.parse(ws.sentMessages[0]).data.tunnelId;
+    ws.sentMessages = []; // Clear setup messages
+    postHealthCheckResponseSpy.calls = []; // Clear spy
+
+    const originalJobId = "orig-hc-job-1";
+    const originalInstanceId = "orig-hc-instance-1";
+
+    initiateForwardedAgentHealthCheck(tunnelId, originalJobId, originalInstanceId);
+    await fakeTime.runMicrotasks(); // Allow ping to be sent
+
+    assertEquals(ws.sentMessages.length, 1);
+    const pingMsg = JSON.parse(ws.sentMessages[0]) as AgentPingMessage;
+    
+    // Simulate agent pong
+    ws.simulateMessage({ type: "pong", healthCheckJobId: pingMsg.healthCheckJobId, localServiceStatus: "ok" } as AgentPongMessage);
+    await fakeTime.runMicrotasks(); // Allow pong processing and broadcast
+
+    assertSpyCalls(postHealthCheckResponseSpy, 1);
+    const broadcastArgs = postHealthCheckResponseSpy.calls[0].args[0];
+    assertEquals(broadcastArgs.healthCheckJobId, originalJobId);
+    assertEquals(broadcastArgs.targetInstanceId, originalInstanceId);
+    assertEquals(broadcastArgs.statusReport.tunnelId, tunnelId);
+    assertEquals(broadcastArgs.statusReport.tunnelStatus, "connected");
+    assertEquals(broadcastArgs.statusReport.localServiceStatus, "ok");
+  });
+  
+  await t.step("initiateForwardedAgentHealthCheck - Agent times out, broadcasts unresponsive", async () => {
+    const ws = await setupRegisteredTunnel("health-fwd-timeout", "health-key-fwd-timeout");
+    const tunnelId = JSON.parse(ws.sentMessages[0]).data.tunnelId;
+    postHealthCheckResponseSpy.calls = [];
+
+    const originalJobId = "orig-hc-job-timeout";
+    const originalInstanceId = "orig-hc-instance-timeout";
+
+    initiateForwardedAgentHealthCheck(tunnelId, originalJobId, originalInstanceId);
+    await fakeTime.runMicrotasks(); // Send ping
+    
+    await fakeTime.tickAsync(10000 + 500); // HEALTH_CHECK_AGENT_TIMEOUT_MS + buffer
+    await fakeTime.runMicrotasks(); // Process timeout
+
+    assertSpyCalls(postHealthCheckResponseSpy, 1);
+    const broadcastArgs = postHealthCheckResponseSpy.calls[0].args[0];
+    assertEquals(broadcastArgs.healthCheckJobId, originalJobId);
+    assertEquals(broadcastArgs.targetInstanceId, originalInstanceId);
+    assertEquals(broadcastArgs.statusReport.localServiceStatus, "agent_unresponsive");
+  });
+
+
+  await t.step("initiateForwardedAgentHealthCheck - Agent not connected locally, broadcasts disconnected", async () => {
+    const tunnelId = "health-fwd-no-agent";
+    const originalJobId = "orig-hc-job-no-agent";
+    const originalInstanceId = "orig-hc-instance-no-agent";
+    postHealthCheckResponseSpy.calls = [];
+
+    initiateForwardedAgentHealthCheck(tunnelId, originalJobId, originalInstanceId);
+    await fakeTime.runMicrotasks();
+
+    assertSpyCalls(postHealthCheckResponseSpy, 1);
+    const broadcastArgs = postHealthCheckResponseSpy.calls[0].args[0];
+    assertEquals(broadcastArgs.healthCheckJobId, originalJobId);
+    assertEquals(broadcastArgs.targetInstanceId, originalInstanceId);
+    assertEquals(broadcastArgs.statusReport.tunnelId, tunnelId);
+    assertEquals(broadcastArgs.statusReport.tunnelStatus, "disconnected");
+    assertEquals(broadcastArgs.statusReport.localServiceStatus, "unknown");
+  });
+
+});

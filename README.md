@@ -383,3 +383,63 @@ To enable and configure Agent Mode, you need to set the following environment va
 *   The remote relay server, upon successful registration, provides the agent with a unique `tunnelId` and a `public_base_url`.
 *   Subsequently, when the relay server receives public HTTP requests matching the tunnel, it forwards these requests (as `httpRequest` messages) to the agent over the established WebSocket tunnel.
 *   The agent processes these `httpRequest` messages, makes requests to the configured local services, and sends `httpResponse` messages back to the relay.
+*   The agent also responds to `ping` messages from the relay with `pong` messages, indicating its status and the health of its primary local service.
+
+#### Tunnel Health Check API
+
+To monitor the status of an established tunnel and the underlying local service, `Doroseek` provides a Health Check API endpoint.
+
+*   **Endpoint:** `GET /tunnel/:tunnelId/status`
+*   **Description:** This endpoint allows you to query the current status of a specific tunnel identified by `:tunnelId`. It checks both the WebSocket connection from the relay to the local agent and the agent's ability to reach its configured local service(s).
+*   **Authentication:** This endpoint does not currently require specific API key authentication, but the `tunnelId` must be valid and known to the system. Access control can be layered on top via standard reverse proxy or gateway mechanisms if needed.
+*   **Response Body (`HealthStatusReport`):**
+    The API returns a JSON object with the following structure:
+    ```json
+    {
+      "tunnelId": "string", // The ID of the tunnel checked
+      "tunnelStatus": "connected" | "disconnected" | "unknown",
+      "localServiceStatus": "ok" | "error" | "unconfigured" | "timeout" | "unknown" | "agent_unresponsive",
+      "checkedByInstanceId": "string", // ID of the relay instance that performed/reported the check
+      "timestamp": "string" // ISO 8601 timestamp of when the check was performed
+    }
+    ```
+    *   **`tunnelId`**: The ID of the tunnel that was checked.
+    *   **`tunnelStatus`**:
+        *   `"connected"`: The relay server has an active WebSocket connection to the local agent for this tunnel.
+        *   `"disconnected"`: The relay server does not have an active WebSocket connection to the local agent.
+        *   `"unknown"`: The status of the tunnel could not be determined (e.g., tunnel ID not found in the primary database).
+    *   **`localServiceStatus`**:
+        *   `"ok"`: The local agent responded to a health check ping and reported its primary configured local service is reachable.
+        *   `"error"`: The local agent responded, but reported an error when trying to check its local service.
+        *   `"unconfigured"`: The local agent responded, but has no local services configured to check, or the service type is not checkable by the agent.
+        *   `"timeout"`: The local agent responded, but its attempt to check the local service timed out.
+        *   `"agent_unresponsive"`: The relay server is connected to the agent, but the agent did not respond to a health check ping within the expected time.
+        *   `"unknown"`: The status of the local service could not be determined (e.g., because `tunnelStatus` is not `"connected"`).
+    *   **`checkedByInstanceId`**: The unique ID of the relay server instance that performed or last reported the health status. Useful in multi-instance deployments.
+    *   **`timestamp`**: The ISO 8601 timestamp of when the health status was determined.
+
+*   **Example Usage:**
+    Request:
+    ```
+    GET /tunnel/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx/status
+    ```
+    Example Response:
+    ```json
+    {
+      "tunnelId": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      "tunnelStatus": "connected",
+      "localServiceStatus": "ok",
+      "checkedByInstanceId": "yyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy",
+      "timestamp": "2023-10-27T10:30:00.000Z"
+    }
+    ```
+    Another Example (Agent connected, but local service is down):
+    ```json
+    {
+      "tunnelId": "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",
+      "tunnelStatus": "connected",
+      "localServiceStatus": "error",
+      "checkedByInstanceId": "wwwwwww-wwww-wwww-wwww-wwwwwwwwwwww",
+      "timestamp": "2023-10-27T10:35:00.000Z"
+    }
+    ```

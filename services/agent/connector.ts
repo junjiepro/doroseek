@@ -2,12 +2,12 @@
 import { AgentConfig, AgentServiceConfig } from "./config.ts";
 import {
   TunnelMessage,
-  AgentHttpRequest, // Import the specific type for httpRequest messages
-  // ... other imports from shared/tunnel.ts if needed directly by connector
+  AgentHttpRequest,
 } from "../../shared/tunnel.ts";
+import { AgentPingMessage } from "../../shared/health.ts"; // For handling ping from relay
+import type { AgentRequestHandler } from "./handler.ts"; // Type import for handler reference
 
 // Define specific message types used by the agent for clarity (if not directly using shared types)
-// These should align with what the server expects/sends, as defined in shared/tunnel.ts
 interface AgentRegisterMessage {
   type: "register";
   data: {
@@ -69,28 +69,39 @@ function isServerErrorMessage(msg: any): msg is ServerErrorMessageForAgent {
     return msg && msg.type === "error" && typeof msg.error === 'string';
 }
 
+// Type guard for AgentPingMessage
+function isAgentPingMessage(msg: any): msg is AgentPingMessage {
+    return msg && msg.type === "ping" && typeof msg.healthCheckJobId === 'string';
+}
+
 
 export class AgentConnector {
   private config: AgentConfig;
   private socket: WebSocket | null = null;
-  private isConnected: boolean = false; // True when WebSocket is open
-  private isRegistered: boolean = false; // True when relay confirms registration
+  private isConnected: boolean = false;
+  private isRegistered: boolean = false;
   private tunnelId: string | null = null;
   private publicBaseUrl: string | null = null;
   private retryCount: number = 0;
   private heartbeatIntervalId: number | null = null;
   private reconnectTimeoutId: number | null = null;
 
-  // Callback for when the agent is fully registered and ready
+  // Reference to the request handler for callbacks (like health checks)
+  public agentRequestHandler: AgentRequestHandler | null = null; 
+
   public onReady: (() => void) | null = null;
-  // Callback for when an httpRequest is received from the relay
-  // The handler is expected to be bound if it's a class method.
   public onHttpRequest: ((message: AgentHttpRequest) => Promise<void> | void) | null = null;
 
-  constructor(config: AgentConfig) {
+  constructor(config: AgentConfig) { // Handler will be set via property or a setter method
     this.config = config;
     console.log("[Agent Connector] Initialized with Relay URL:", config.relayUrl);
   }
+  
+  // Setter for request handler to avoid circular dependencies if handler also needs connector
+  public setRequestHandler(handler: AgentRequestHandler): void {
+    this.agentRequestHandler = handler;
+  }
+
 
   public connect(): void {
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
@@ -200,8 +211,24 @@ export class AgentConnector {
         } else {
           console.warn("[Agent Connector] Received httpRequest but no onHttpRequest handler is set.");
           // If no handler, we should probably send an error back to the relay for this request.
-          // This requires constructing an AgentHttpResponse which might be better done by the (missing) handler.
-          // For now, just logging.
+            // This is complex as the connector doesn't build HTTP responses.
+            // The route handler on the relay side should have a timeout for the proxied request.
+            console.error("[Agent Connector] Received httpRequest but no onHttpRequest handler is set. Cannot process.");
+          }
+        }
+      } else if (isAgentPingMessage(message)) {
+        if (this.agentRequestHandler) {
+          // Do not await, let it run in background
+          this.agentRequestHandler.handleHealthCheckPing(message.healthCheckJobId)
+            .catch(err => {
+                console.error("[Agent Connector] Error in handleHealthCheckPing:", err);
+                // If handleHealthCheckPing itself fails before sending a pong, 
+                // the relay will time out for this healthCheckJobId.
+            });
+        } else {
+          console.warn("[Agent Connector] Received ping but no agentRequestHandler is set to handle it.");
+          // Optionally send a pong with "error" or "unconfigured" status directly if no handler
+          // This would require AgentConnector to construct AgentPongMessage.
         }
       } else {
         console.warn("[Agent Connector] Received unknown message type or unhandled message:", message);

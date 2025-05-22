@@ -3,8 +3,20 @@ import { v4 as uuidv4 } from "uuid";
 import { getTunnel } from "../../services/database.ts";
 import {
   getActiveTunnelSocket,
-  pendingHttpRequests,
+  pendingHttpRequests, // This is for responses from locally connected agents
 } from "../../services/mcp/server/tunnel.ts";
+import { RELAY_INSTANCE_ID } from "../../lib/utils.ts";
+import {
+  postHttpRequestToChannel,
+  BroadcastHttpRequestMessage, // Type for messages sent over BroadcastChannel
+} from "../../services/inter_instance_comms.ts";
+import {
+  addPendingForwardedRequest,
+  ForwardedResponseData, // Type for responses received via BroadcastChannel
+} from "../../services/forwarded_request_registry.ts";
+import { getTunnelOwnerInstance } from "../../services/tunnel_registry.ts";
+
+const LOCAL_AGENT_HTTP_REQUEST_TIMEOUT_MS = 30000; // 30 seconds for local agent HTTP requests
 
 // Helper to serialize request body to a suitable format (string or base64 for binary)
 async function serializeRequestBody(request: Request): Promise<string | null> {
@@ -72,21 +84,74 @@ export const handler: Handlers = {
       );
     }
 
-    // 2. Find the active WebSocket for the agent
-    const agentSocket = getActiveTunnelSocket(tunnelId);
-    if (!agentSocket || agentSocket.readyState !== WebSocket.OPEN) {
-      // If socket not found or not open, perhaps update status again?
-      // For now, assume status is accurate or will be updated by tunnel.ts on disconnect.
+    // 2. Determine which instance holds the agent's WebSocket connection
+    const agentSocket = getActiveTunnelSocket(tunnelId); // Check local first
+    const owningInstanceId = await getTunnelOwnerInstance(tunnelId); // Check distributed registry
+
+    if (agentSocket && agentSocket.readyState === WebSocket.OPEN) {
+      // Agent is connected to THIS instance. Proceed with local forwarding.
+      console.log(`[Tunnel Route] Agent for ${tunnelId} is local. Proceeding with direct forwarding.`);
+    } else if (owningInstanceId && owningInstanceId !== RELAY_INSTANCE_ID) {
+      // Agent is connected to ANOTHER instance. Forward request via BroadcastChannel.
+      console.log(`[Tunnel Route] Agent for ${tunnelId} is on instance ${owningInstanceId}. Forwarding request.`);
+      
+      // WebSocket Upgrade Requests cannot be easily forwarded across instances.
+      if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        console.warn(`[Tunnel Route] WebSocket upgrade request for remote tunnel ${tunnelId} cannot be forwarded.`);
+        return new Response(
+          JSON.stringify({ error: "WebSocket proxying for remote tunnels not supported" }),
+          { status: 501, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      
+      const jobId = uuidv4(); // Unique ID for this forwarded request-response cycle
+      const serializedBody = await serializeRequestBody(req);
+      const broadcastRequestData: BroadcastHttpRequestMessage["requestData"] = {
+        method: req.method,
+        path: servicePath,
+        headers: Object.fromEntries(req.headers.entries()),
+        body: serializedBody,
+      };
+
+      try {
+        const responsePromise = addPendingForwardedRequest(jobId);
+        
+        postHttpRequestToChannel({
+          // type: "httpRequest", // Type is part of BroadcastHttpRequestMessage, not needed here
+          tunnelId: tunnelId,
+          requestId: jobId, // Use jobId as requestId for inter-instance comms
+          targetInstanceId: owningInstanceId, // Target the specific instance
+          requestData: broadcastRequestData,
+        });
+
+        console.log(`[Tunnel Route] Broadcasted HTTP request ${jobId} to instance ${owningInstanceId} for tunnel ${tunnelId}`);
+        
+        const forwardedResponse: ForwardedResponseData = await responsePromise;
+
+        const responseHeaders = new Headers(forwardedResponse.headers);
+        // Body is already string or null (potentially base64 for binary from other instance)
+        return new Response(forwardedResponse.body, {
+          status: forwardedResponse.status,
+          headers: responseHeaders,
+        });
+
+      } catch (error) {
+        console.error(`[Tunnel Route] Error during inter-instance request forwarding for ${jobId} (Tunnel ${tunnelId}):`, error);
+        return new Response(
+          JSON.stringify({ error: "Failed to forward request to remote agent instance", details: error.message }),
+          { status: 504, headers: { "Content-Type": "application/json" } }, // Gateway Timeout
+        );
+      }
+    } else {
+      // Agent not connected locally, and not found (or found on this instance but socket is bad) in distributed registry
+      console.warn(`[Tunnel Route] Agent for tunnel ${tunnelId} not found or not connected. Local check: ${agentSocket ? agentSocket.readyState : 'no socket'}. Distributed check: ${owningInstanceId}`);
       return new Response(
-        JSON.stringify({ error: "Tunnel agent not connected" }),
-        {
-          status: 502, // Bad Gateway
-          headers: { "Content-Type": "application/json" },
-        },
+        JSON.stringify({ error: "Tunnel agent not connected or tunnel owner unknown" }),
+        { status: 502, headers: { "Content-Type": "application/json" } }, // Bad Gateway
       );
     }
     
-    // 3. Handle WebSocket Upgrade Requests (Not implemented in this step)
+    // 3. Handle WebSocket Upgrade Requests (Only for local agents now)
     if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
       console.log(`[Tunnel Route] WebSocket upgrade request for ${tunnelId}${servicePath} - Not yet implemented.`);
       // Here, one would Deno.upgradeWebSocket(req) and then orchestrate proxying
@@ -100,89 +165,61 @@ export const handler: Handlers = {
       );
     }
 
-    // 4. Handle HTTP Requests
-    const requestId = uuidv4();
-    const requestData = {
+    // 4. Handle HTTP Requests (This block is now only for LOCAL agents)
+    // If agentSocket is local and open, this code runs.
+    // If forwarded, the logic above handles it.
+    
+    const localRequestId = uuidv4(); // Use a different name to avoid confusion with inter-instance 'jobId'
+    const localRequestData = {
       method: req.method,
-      path: servicePath, // Send the path within the service to the agent
+      path: servicePath,
       headers: Object.fromEntries(req.headers.entries()),
       body: await serializeRequestBody(req),
     };
 
     try {
-      const responsePromise = new Promise<any>((resolve, reject) => {
-        pendingHttpRequests.set(requestId, resolve);
-        // Timeout for the request
+      // This promise is for local agent communication
+      const responseFromAgentPromise = new Promise<any>((resolve, reject) => {
+        pendingHttpRequests.set(localRequestId, resolve); // Uses the map from tunnel.ts
         setTimeout(() => {
-          if (pendingHttpRequests.has(requestId)) {
-            pendingHttpRequests.delete(requestId);
-            reject(new Error(`Request to agent timed out (requestId: ${requestId})`));
+          if (pendingHttpRequests.has(localRequestId)) {
+            pendingHttpRequests.delete(localRequestId);
+            reject(new Error(`Request to local agent timed out (requestId: ${localRequestId})`));
           }
-        }, 30000); // 30 seconds timeout
+        }, LOCAL_AGENT_HTTP_REQUEST_TIMEOUT_MS); 
       });
 
-      agentSocket.send(JSON.stringify({
+      agentSocket!.send(JSON.stringify({ // agentSocket is confirmed to be local and open here
         type: "httpRequest",
-        requestId: requestId,
-        data: requestData,
+        requestId: localRequestId,
+        data: localRequestData,
       }));
 
-      console.log(`[Tunnel Route] Forwarded HTTP request ${requestId} to tunnel ${tunnelId} for path ${servicePath}`);
+      console.log(`[Tunnel Route] Forwarded local HTTP request ${localRequestId} to tunnel ${tunnelId} for path ${servicePath}`);
 
-      const agentResponse = await responsePromise;
+      const agentResponse = await responseFromAgentPromise;
 
-      // Reconstruct and return the response
-      const headers = new Headers(agentResponse.headers);
-      // Ensure content-type is set if body is present, otherwise Fresh/Deno might default to text/plain
-      if (agentResponse.body && !headers.has("Content-Type")) {
-        headers.set("Content-Type", "application/octet-stream"); // Default if not specified
+      // Reconstruct and return the response from the local agent
+      const responseHeaders = new Headers(agentResponse.headers);
+      if (agentResponse.body && !responseHeaders.has("Content-Type")) {
+        responseHeaders.set("Content-Type", "application/octet-stream"); 
       }
       
-      let responseBody: BodyInit | null = null;
-      if (agentResponse.body) {
-        // Assuming agent sends body as base64 string if it was binary, or plain text otherwise.
-        // The client needs to decode if it was base64. This part needs careful handling
-        // of content types and encoding between agent and server.
-        // For now, if headers suggest base64, we should decode.
-        // However, the browser will decode based on Content-Encoding, not this manual step.
-        // Let's assume the agent sends back a string body that's either plain text or pre-encoded if it was binary.
-        // If the original request body was base64 encoded by serializeRequestBody, 
-        // the agent must decode it, make the request, get response, potentially encode its body to base64,
-        // and send it back. Then here, we might need to decode it if it's intended to be binary.
-        // This is simplified: assume body is directly usable or already base64 if it needs to be.
-        
-        // A simple check: if content type implies text, use as is. Otherwise, try to decode from base64.
-        const respContentType = headers.get("content-type");
-        if (respContentType && (respContentType.startsWith("text/") || respContentType.includes("json") || respContentType.includes("xml"))) {
-            responseBody = agentResponse.body;
-        } else {
-            // Attempt to decode from base64 if it's not marked as text.
-            // This assumes the agent *always* base64 encodes non-text bodies.
-            try {
-                // This will corrupt data if agentResponse.body is not actually base64
-                // responseBody = Uint8Array.from(atob(agentResponse.body), c => c.charCodeAt(0));
-                // For now, pass through. Agent and client must agree on encoding.
-                responseBody = agentResponse.body; 
-            } catch (e) {
-                console.error(`[Tunnel Route] Error decoding base64 body for requestId ${requestId}:`, e);
-                responseBody = agentResponse.body; // Fallback to original body
-            }
-        }
-      }
+      // Body from agent is already string or null (potentially base64 encoded)
+      // The logic for handling base64 decoding on client side or here remains the same.
+      // For simplicity, passing through as is for now.
+      const responseBody = agentResponse.body;
 
       return new Response(responseBody, {
         status: agentResponse.status,
-        headers: headers,
+        headers: responseHeaders,
       });
 
     } catch (error) {
-      console.error(`[Tunnel Route] Error processing request ${requestId} for tunnel ${tunnelId}:`, error);
+      console.error(`[Tunnel Route] Error processing local request ${localRequestId} for tunnel ${tunnelId}:`, error);
       return new Response(
-        JSON.stringify({ error: "Failed to proxy request to agent", details: error.message }),
-        {
-          status: 502, // Bad Gateway
-          headers: { "Content-Type": "application/json" },
-        },
+        JSON.stringify({ error: "Failed to proxy request to local agent", details: error.message }),
+        { status: 502, headers: { "Content-Type": "application/json" } },
       );
     }
   },
