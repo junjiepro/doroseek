@@ -28,7 +28,8 @@ class MCPService {
         } else {
           return tunnelWebSocketHandler(request, endPathPart, apiKey); // Handles non-WebSocket errors
         }
-      } else if (serverName === "room") { // Handle room requests
+      } else if (serverName === "room") {
+        // Handle room requests
         // The 'endPathPart' here is treated as the 'roomId'
         if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
           return roomWebSocketHandler(request, endPathPart, apiKey); // endPathPart is roomId
@@ -36,7 +37,8 @@ class MCPService {
           // Non-WebSocket requests to /mcp/room/* can be an error or serve info
           return roomWebSocketHandler(request, endPathPart, apiKey); // Handles non-WebSocket errors
         }
-      } else if (serverName === "fileshare") { // Handle fileshare requests
+      } else if (serverName === "fileshare") {
+        // Handle fileshare requests
         // The 'endPathPart' here could specify an action, e.g., "upload".
         if (request.headers.get("upgrade")?.toLowerCase() === "websocket") {
           return fileshareWebSocketHandler(request, endPathPart, apiKey);
@@ -45,12 +47,12 @@ class MCPService {
           // fileshareWebSocketHandler returns an error for non-WebSocket requests.
           return fileshareWebSocketHandler(request, endPathPart, apiKey);
         }
-      } else if (endPathPart === "message" || endPathPart === "sse") { // Existing MCP routes
+      } else if (endPathPart === "message" || endPathPart === "sse") {
+        // Existing MCP routes
         const mcpServer = generateServer(serverName);
         if (mcpServer) {
           return createServerResponseAdapter(request.signal, (res) => {
-            // Pass the 'endPathPart' to the server, which might be 'message' or 'sse'
-            mcpServer.server(request, res, endPathPart);
+            mcpServer.server(request, res);
           });
         } else {
           return new Response(
@@ -84,7 +86,7 @@ class MCPService {
 const checkAuth = async (
   serverName: string,
   endPathPart: string,
-  apiKey?: string,
+  apiKey?: string
 ): Promise<boolean> => {
   if (serverName === "tunnel" && endPathPart === "register") {
     // For tunnel registration, an API key is required and must be valid.
@@ -95,7 +97,7 @@ const checkAuth = async (
     const config = await loadBalancer.loadEndpointConfig(apiKey);
     if (!config) {
       console.log(
-        `[MCP Auth] Tunnel registration attempt with invalid API key: ${apiKey}`,
+        `[MCP Auth] Tunnel registration attempt with invalid API key: ${apiKey}`
       );
       return false;
     }
@@ -105,6 +107,7 @@ const checkAuth = async (
 
   // Existing logic for other MCP services like sequentialthinking
   if (endPathPart === "message" || endPathPart === "sse") {
+    if (endPathPart === "message") return true;
     if (!apiKey) return false;
     const config = await loadBalancer.loadEndpointConfig(apiKey);
     return !!config;
@@ -112,18 +115,22 @@ const checkAuth = async (
 
   // For other paths or future tunnel operations (like connecting to an existing tunnel),
   // an API key might also be required.
-  if (serverName === "tunnel") { // For connecting to an existing tunnel via /mcp/tunnel/:tunnelId
+  if (serverName === "tunnel") {
+    // For connecting to an existing tunnel via /mcp/tunnel/:tunnelId
     if (!apiKey) return false;
     const config = await loadBalancer.loadEndpointConfig(apiKey);
     return !!config;
   }
-  
+
   // For room access, allow if an API key is provided and valid, or if no API key is given (public access).
   if (serverName === "room") {
-    if (apiKey) { // If API key is provided, it must be valid
+    if (apiKey) {
+      // If API key is provided, it must be valid
       const config = await loadBalancer.loadEndpointConfig(apiKey);
       if (!config) {
-        console.log(`[MCP Auth] Room access attempt with invalid API key: ${apiKey}`);
+        console.log(
+          `[MCP Auth] Room access attempt with invalid API key: ${apiKey}`
+        );
         return false;
       }
     }
@@ -139,7 +146,7 @@ const checkAuth = async (
     const config = await loadBalancer.loadEndpointConfig(apiKey);
     if (!config) {
       console.log(
-        `[MCP Auth] Fileshare access attempt with invalid API key: ${apiKey}`,
+        `[MCP Auth] Fileshare access attempt with invalid API key: ${apiKey}`
       );
       return false;
     }
