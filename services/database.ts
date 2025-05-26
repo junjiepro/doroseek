@@ -78,32 +78,38 @@ export async function writeItems(
   inputs: ItemInputSchema
 ): Promise<void> {
   const currentEntries = await db.getMany(
-    inputs.map((input: EndpointListItem) => ["list", listId, input.id])
+    inputs.map((input: Omit<EndpointListItem, "createdAt" | "updatedAt">) => [
+      "list",
+      listId,
+      input.id!,
+    ])
   );
 
   const op = db.atomic();
 
-  inputs.forEach((input: EndpointListItem, i: number) => {
-    if (!input.setting) {
-      op.delete(["list", listId, input.id!]);
-    } else {
-      const current = currentEntries[i].value as EndpointListItem | null;
-      const now = Date.now();
-      const createdAt = current?.createdAt ?? now;
+  inputs.forEach(
+    (input: Omit<EndpointListItem, "createdAt" | "updatedAt">, i: number) => {
+      if (!input.setting) {
+        op.delete(["list", listId, input.id!]);
+      } else {
+        const current = currentEntries[i].value as EndpointListItem | null;
+        const now = Date.now();
+        const createdAt = current?.createdAt ?? now;
 
-      const item: EndpointListItem = {
-        setting: input.setting,
-        name: input.name,
-        endpoint: input.endpoint,
-        apiKey: input.apiKey,
-        enabled: input.enabled,
-        models: input.models,
-        createdAt,
-        updatedAt: now,
-      };
-      op.set(["list", listId, input.id!], item);
+        const item: EndpointListItem = {
+          setting: input.setting,
+          name: input.name,
+          endpoint: input.endpoint,
+          apiKey: input.apiKey,
+          enabled: input.enabled,
+          models: input.models,
+          createdAt,
+          updatedAt: now,
+        };
+        op.set(["list", listId, input.id!], item);
+      }
     }
-  });
+  );
   op.set(["list_updated", listId], true);
   await op.commit();
   loadBalancer.removeEndpoint(listId);
@@ -114,37 +120,43 @@ export async function writeKeys(
   inputs: KeyInputSchema
 ): Promise<void> {
   const currentEntries = await db.getMany(
-    inputs.map((input: EndpointKey) => ["key", listId, input.id])
+    inputs.map((input: Omit<EndpointKey, "createdAt" | "updatedAt">) => [
+      "key",
+      listId,
+      input.id!,
+    ])
   );
 
   const op = db.atomic();
 
-  inputs.forEach((input: EndpointKey, i: number) => {
-    if (!input.name) {
-      op.delete(["key", listId, input.id!]);
-      op.delete(["parentkey", input.id!]);
-      loadBalancer.removeKey(input.id!);
-    } else {
-      const current = currentEntries[i].value as EndpointKey | null;
-      const now = Date.now();
-      const createdAt = current?.createdAt ?? now;
-
-      const item: EndpointKey = {
-        name: input.name,
-        parentId: listId,
-        enabled: input.enabled,
-        createdAt,
-        updatedAt: now,
-      };
-      op.set(["key", listId, input.id!], item);
-      if (item.enabled) {
-        op.set(["parentkey", input.id!], listId);
-      } else {
+  inputs.forEach(
+    (input: Omit<EndpointKey, "createdAt" | "updatedAt">, i: number) => {
+      if (!input.name) {
+        op.delete(["key", listId, input.id!]);
         op.delete(["parentkey", input.id!]);
         loadBalancer.removeKey(input.id!);
+      } else {
+        const current = currentEntries[i].value as EndpointKey | null;
+        const now = Date.now();
+        const createdAt = current?.createdAt ?? now;
+
+        const item: EndpointKey = {
+          name: input.name,
+          parentId: listId,
+          enabled: input.enabled,
+          createdAt,
+          updatedAt: now,
+        };
+        op.set(["key", listId, input.id!], item);
+        if (item.enabled) {
+          op.set(["parentkey", input.id!], listId);
+        } else {
+          op.delete(["parentkey", input.id!]);
+          loadBalancer.removeKey(input.id!);
+        }
       }
     }
-  });
+  );
   op.set(["list_updated", listId], true);
   await op.commit();
 }
@@ -160,7 +172,9 @@ const TUNNELS_BY_AGENT_ID_PREFIX = "tunnels_by_agentId"; // If agentId is differ
  * Saves a new tunnel registration to Deno KV.
  * @param tunnelData The tunnel registration data.
  */
-export async function saveTunnel(tunnelData: TunnelRegistration): Promise<void> {
+export async function saveTunnel(
+  tunnelData: TunnelRegistration
+): Promise<void> {
   const { tunnelId, apiKey, agentId } = tunnelData;
   const tunnelKey = [TUNNELS_PREFIX, tunnelId];
   const byApiKeyKey = [TUNNELS_BY_API_KEY_PREFIX, apiKey, tunnelId];
@@ -181,7 +195,7 @@ export async function saveTunnel(tunnelData: TunnelRegistration): Promise<void> 
  * @returns The tunnel registration data or null if not found.
  */
 export async function getTunnel(
-  tunnelId: string,
+  tunnelId: string
 ): Promise<TunnelRegistration | null> {
   const tunnelKey = [TUNNELS_PREFIX, tunnelId];
   const result = await db.get<TunnelRegistration>(tunnelKey);
@@ -195,7 +209,7 @@ export async function getTunnel(
  */
 export async function updateTunnelStatus(
   tunnelId: string,
-  status: TunnelRegistration["status"],
+  status: TunnelRegistration["status"]
 ): Promise<boolean> {
   const tunnelKey = [TUNNELS_PREFIX, tunnelId];
   const tunnel = await getTunnel(tunnelId);
@@ -213,7 +227,7 @@ export async function updateTunnelStatus(
   const op = db
     .atomic()
     .set(tunnelKey, updatedTunnel)
-    .set(byApiKeyKey, updatedTunnel) 
+    .set(byApiKeyKey, updatedTunnel)
     .set(byAgentIdKey, updatedTunnel);
 
   const commitResult = await op.commit();
@@ -226,7 +240,7 @@ export async function updateTunnelStatus(
  * @returns An array of tunnel registrations.
  */
 export async function getTunnelsByApiKey(
-  apiKey: string,
+  apiKey: string
 ): Promise<TunnelRegistration[]> {
   const tunnels: TunnelRegistration[] = [];
   const iter = db.list<TunnelRegistration>({
@@ -284,7 +298,7 @@ export async function saveFileMetadata(metadata: FileMetadata): Promise<void> {
  * @returns The file metadata or null if not found.
  */
 export async function getFileMetadata(
-  resourceId: string,
+  resourceId: string
 ): Promise<FileMetadata | null> {
   const metadataKey = [FILES_METADATA_PREFIX, resourceId];
   const result = await db.get<FileMetadata>(metadataKey);
@@ -299,12 +313,12 @@ export async function getFileMetadata(
  */
 export async function updateFileStatus(
   resourceId: string,
-  status: FileMetadata["status"],
+  status: FileMetadata["status"]
 ): Promise<boolean> {
   const metadata = await getFileMetadata(resourceId);
   if (!metadata) {
     console.warn(
-      `[DB Fileshare] Metadata not found for status update: ${resourceId}`,
+      `[DB Fileshare] Metadata not found for status update: ${resourceId}`
     );
     return false;
   }
@@ -326,12 +340,15 @@ export async function updateFileStatus(
  */
 export async function saveFileData(
   resourceId: string,
-  data: Uint8Array,
+  data: Uint8Array
 ): Promise<void> {
   // Check size before attempting to save to avoid Deno KV errors for oversized values.
   // Deno KV values are typically limited to 64 KiB.
-  if (data.byteLength > 60 * 1024) { // A bit less than 64KB to be safe
-    console.warn(`[DB Fileshare] File data for ${resourceId} may exceed Deno KV size limits (${data.byteLength} bytes). Attempting to save anyway.`);
+  if (data.byteLength > 60 * 1024) {
+    // A bit less than 64KB to be safe
+    console.warn(
+      `[DB Fileshare] File data for ${resourceId} may exceed Deno KV size limits (${data.byteLength} bytes). Attempting to save anyway.`
+    );
     // For production, throw an error or handle chunking.
     // throw new Error(`File size ${data.byteLength} exceeds 64KB limit for single KV entry.`);
   }
@@ -345,7 +362,7 @@ export async function saveFileData(
  * @returns The file data as Uint8Array or null if not found.
  */
 export async function getFileData(
-  resourceId: string,
+  resourceId: string
 ): Promise<Uint8Array | null> {
   const dataKey = [FILES_DATA_PREFIX, resourceId];
   const result = await db.get<Uint8Array>(dataKey);
@@ -362,5 +379,7 @@ export async function deleteFileData(resourceId: string): Promise<void> {
 
   const op = db.atomic().delete(metadataKey).delete(dataKey);
   await op.commit();
-  console.log(`[DB Fileshare] File ${resourceId} (metadata and data) deleted successfully.`);
+  console.log(
+    `[DB Fileshare] File ${resourceId} (metadata and data) deleted successfully.`
+  );
 }
